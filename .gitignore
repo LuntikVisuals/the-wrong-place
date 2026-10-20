@@ -1,0 +1,14 @@
+*.jks
+*.keystore
+*.p12
+keystore.properties
+*.apk
+build/
+.gradle/
+local.properties
+__pycache__/
+screens/
+videos/
+dist/
+android/out/
+tests/last_results.json
