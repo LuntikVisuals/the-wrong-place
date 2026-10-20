@@ -1,0 +1,44 @@
+<!DOCTYPE html>
+<html lang="ru"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
+<title>The Wrong Place</title>
+<style>
+html,body{margin:0;height:100%;background:#050307;overflow:hidden;touch-action:none;user-select:none;-webkit-user-select:none;font-family:'Trebuchet MS',Arial,sans-serif;color:#e8dcc8}
+#cv{position:fixed;left:0;top:0;width:100%;height:100%;image-rendering:pixelated}
+#ui{position:fixed;inset:0;display:flex;background:radial-gradient(ellipse at 50% 30%,#2a0f14 0%,#0b0508 60%,#030203 100%);overflow:auto}
+#ui.hide{display:none}
+.panel{max-width:900px;width:94%;text-align:center;padding:10px;margin:auto}
+h1{font-size:44px;margin:6px 0;letter-spacing:4px;color:#d8c7a8;text-shadow:3px 3px 0 #5a0b12,0 0 18px #900}
+h2{margin:6px 0;color:#c9b18a}
+.sub{color:#a08f7a;font-size:14px;margin-bottom:10px}
+button{font-family:inherit;background:#2a1418;color:#f0e2c8;border:3px solid #6a2228;padding:10px 18px;margin:5px;font-size:17px;border-radius:4px;box-shadow:0 4px 0 #120607;cursor:pointer}
+button.sel{background:#6a1a20;border-color:#e0a050}
+button:disabled{opacity:.4}
+.row{display:flex;flex-wrap:wrap;justify-content:center;gap:4px}
+.card{display:inline-block;width:150px;vertical-align:top;background:#1a0d10;border:3px solid #4a1a1e;margin:4px;padding:6px;border-radius:4px;cursor:pointer;font-size:12px}
+.card.sel{border-color:#e0a050;background:#3a1418}
+.card b{font-size:14px;color:#f3d9a8}
+.card canvas{display:block;margin:0 auto;image-rendering:pixelated}
+.lore{font-size:14px;color:#bba98f;max-width:640px;margin:8px auto;line-height:1.45}
+#ui.lobby{display:block;overflow:hidden;background:#000}
+#lbcv{position:absolute;inset:0;width:100%;height:100%;image-rendering:pixelated}
+.lobby button{font-weight:bold;text-shadow:2px 2px 0 #000;border-width:3px;box-shadow:0 5px 0 #0a0304,inset 0 3px 0 rgba(255,255,255,.15)}
+.lb-top{position:absolute;left:8px;right:8px;top:6px;display:flex;align-items:center;justify-content:space-between;pointer-events:none}
+.lb-lvl{display:flex;align-items:center;gap:6px;background:rgba(20,6,8,.8);border:3px solid #6a2228;padding:3px 8px}
+.lb-lvl b{font-size:20px;background:#7a1a1a;border:2px solid #e0a050;padding:0 7px}.lb-lvl span{font-size:11px;display:block}
+.lb-lvl i{display:block;width:80px;height:7px;background:#300;border:1px solid #000}.lb-lvl em{display:block;height:100%;background:#e0b040}
+.lb-title{font-size:clamp(14px,3vw,24px);letter-spacing:3px;color:#d8c7a8;text-shadow:2px 2px 0 #5a0b12}
+.lb-coins{background:rgba(20,6,8,.8);border:3px solid #6a5022;padding:4px 12px;font-weight:bold;color:#ffd060;font-size:16px}
+.lb-side{position:absolute;left:8px;top:54px;display:flex;flex-direction:column;gap:2px}
+.lb-side button{margin:2px;padding:6px 12px;font-size:clamp(12px,2.4vh,16px);min-width:120px;text-align:left;background:#22121a;border-color:#4a2a3a}
+.lb-name{position:absolute;left:50%;top:clamp(40px,13vh,60px);transform:translateX(-50%);display:flex;align-items:center;gap:6px;text-align:center}
+.lb-name div{background:rgba(20,6,8,.8);border:3px solid #4a1a1e;padding:3px 12px}.lb-name b{display:block;font-size:16px;color:#f3d9a8}.lb-name span{font-size:11px}
+.lb-arr{padding:4px 12px;font-size:22px;margin:0}
+.lb-play{position:absolute;right:10px;bottom:10px;display:flex;align-items:flex-end;gap:8px}
+.lb-card{background:rgba(20,6,8,.85);border:3px solid #6a2228;padding:6px 10px;cursor:pointer;font-size:12px;max-width:150px}
+.lb-card b{display:block;font-size:15px;color:#f3d9a8}.lb-card small{display:block;color:#e0a050}
+#bPlay{font-size:clamp(20px,5vh,30px);padding:12px 26px;background:#a01c18;border-color:#ffb040;margin:0}
+</style></head><body>
+<canvas id="cv"></canvas>
+<div id="ui"></div>
+<script>
