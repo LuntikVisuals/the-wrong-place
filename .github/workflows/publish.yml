@@ -1,0 +1,89 @@
+name: Publish release (bootstrap)
+
+# The GitHub API tools used to maintain this repo can only upload text files,
+# so the signed APK (built and signed locally) is uploaded as base64 parts into .github/bootstrap/
+# (the-wrong-place.apk.b64.partN; the .sha256 file is uploaded LAST).
+# This workflow reassembles it, verifies SHA-256, creates the release with the APK,
+# removes the payload and syncs gh-pages (web version = index.html) with main.
+# It does NOT build or sign anything.
+
+on:
+  push:
+    branches: [main]
+    paths: ['.github/bootstrap/**']
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pages: write
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Decode and verify payload
+        run: |
+          set -euo pipefail
+          ls .github/bootstrap/the-wrong-place.apk.b64.part* >/dev/null 2>&1 || { printf 'payload already processed\n'; exit 0; }
+          test -f .github/bootstrap/the-wrong-place.apk.sha256 || { printf 'checksum file not uploaded yet\n'; exit 0; }
+          mkdir -p /tmp/p
+          ls -l .github/bootstrap
+          cat $(ls .github/bootstrap/the-wrong-place.apk.b64.part* | sort -V) | base64 -d > /tmp/p/the-wrong-place.apk
+          printf '%s  /tmp/p/the-wrong-place.apk\n' "$(cut -d' ' -f1 .github/bootstrap/the-wrong-place.apk.sha256)" | sha256sum -c -
+          printf '%s  /tmp/p/the-wrong-place.apk\n' "122615fbc80c1a37f73890fc941e2f1a1c9c9cf959ecc0150e7b0fd57ed15e8d" | sha256sum -c -
+          ls -l /tmp/p
+
+      - name: Create release v0.1.0 with APK
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          test -f /tmp/p/the-wrong-place.apk || exit 0
+          gh release view v0.1.0 >/dev/null 2>&1 && { printf 'release exists\n'; exit 0; }
+          cat > /tmp/notes.md <<'NOTES'
+          «The Wrong Place» 0.1.0: первая тестовая версия
+
+          - Три карты: Особняк (двор и 4 этажа), Деревня, Корабль (3 палубы).
+          - 3 убийцы и 5 выживших со способностями, боты трёх уровней сложности.
+          - Лобби, магазин украшений и фонов лобби (только игровые монеты).
+          - Полноэкранный горизонтальный режим, работает без интернета.
+
+          Android 7.0+, versionCode 1 / versionName 0.1.0, пакет com.luntikvisuals.wrongplace.
+          SHA-256: 122615fbc80c1a37f73890fc941e2f1a1c9c9cf959ecc0150e7b0fd57ed15e8d
+          Некоммерческий фанатский проект, вдохновлён Dead by Daylight.
+          NOTES
+          sed -i 's/^          //' /tmp/notes.md
+          gh release create v0.1.0 /tmp/p/the-wrong-place.apk --target main --latest --title "The Wrong Place v0.1.0" --notes-file /tmp/notes.md
+
+      - name: Remove payload, sync gh-pages with main
+        run: |
+          set -euo pipefail
+          test -f /tmp/p/the-wrong-place.apk || exit 0
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git pull -q --ff-only origin main || true
+          git rm -q -r .github/bootstrap
+          git commit -m "Remove v0.1.0 bootstrap payload (APK published in Release v0.1.0)"
+          git push origin HEAD:main
+          MAIN=$(git rev-parse HEAD)
+          if git fetch origin gh-pages; then
+            git checkout -B gh-pages origin/gh-pages
+            git merge --no-edit -X theirs "$MAIN" -m "Sync gh-pages with main (v0.1.0)" || true
+            if ! git diff --quiet "$MAIN" HEAD; then git read-tree --reset -u "$MAIN" && git commit -m "Sync gh-pages tree with main"; fi
+          else
+            git checkout -B gh-pages "$MAIN"
+          fi
+          git diff --quiet "$MAIN" HEAD
+          git push origin gh-pages
+
+      - name: Enable / rebuild GitHub Pages
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh api -X POST "repos/${{ github.repository }}/pages" -f "source[branch]=gh-pages" -f "source[path]=/" || printf 'Pages site exists or cannot be created with this token.\n'
+          gh api -X POST "repos/${{ github.repository }}/pages/builds" || printf 'Pages rebuild request not permitted; the push to gh-pages should trigger it.\n'
