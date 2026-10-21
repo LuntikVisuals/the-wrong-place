@@ -1,41 +1,30 @@
-# The Wrong Place
+# The Wrong Place (прототип 0.1)
+Build: `python3 build.py` → `dist/the-wrong-place.html` (concatenates src/*.js alphabetically after src/a_head.html).
+Tests: `python3 tests/run_scen.py` (26 functional scenarios), `python3 tests/browser_test.py 100` (headless Chrome: console errors,
+live play on every side/character/map, touch + aim input, screenshots → screens/, ~620 bot-vs-bot matches), `node tests/node_stuck.js 15 mansion` (fast node sim).
 
-Мобильный хоррор в стиле «один против четырёх». Люди, пропавшие в США, оказываются в Стране Чудес. Она похожа на наш мир, но со своими местами, и правит ей невидимый **Хозяин**. Выжившие чинят генераторы, чтобы запитать ворота и сбежать. Убийца сбивает их с ног и вешает на крюки.
+## Maps & balance
+- Village and Ship are hand-designed in `tools/mapdesign.py` (ASCII), and `python3 tools/mapdesign.py` regenerates `src/c_maps2.js`. Per-map generator speed: `M.genMul` (village 1.5, ship 1.6).
+- `node tests/mapcheck.js [village|ship]` checks reachability. `node tests/balance.js N [maps]` gives killer win % per map and killer.
 
-Игра одиночная: ты выбираешь сторону (убийца или выживший), остальными управляют боты трёх уровней сложности.
+## Lobby backgrounds
+- `LBG` in `src/k_lobby.js` holds the backgrounds: parlor (free), graveyard 40, cabin 60, barn 80, chapel 100. You buy and equip them in Магазин, and they are saved in localStorage `twp_prof` (`bg`, `owned`).
 
-## Скачать и играть
+## v0.1.1 (versionCode 2)
 
-- **Android (APK):** [последний релиз](https://github.com/LuntikVisuals/the-wrong-place/releases/latest). Нужен Android 7.0+. Работает офлайн, горизонтальный экран.
-- **Веб-версия:** https://luntikvisuals.github.io/the-wrong-place/ (лучше на телефоне в горизонтальном режиме; на компьютере: WASD/стрелки, мышь для прицела).
-
-## Что внутри
-
-- **Убийцы:** Мистер Стежок (Нить, Разрыв), Бледная Невеста (Шёпот, Фата, холод), Гнилая Челюсть (Чутьё, Прыжок, нюх на кровь).
-- **Выжившие:** Нора Вэнс, Тайлер Грейвс, Рут Окафор, Сэм Келлер, Виктор Хейл, у каждого своя способность.
-- **Карты:** Особняк (двор и 4 этажа), Деревня (дома, церковь, амбар, чердаки), Корабль (3 палубы).
-- Через щели можно пролезать, можно ползти и ронять шкафы на убийцу. Рядом с убийцей стучит сердце. Все способности прицеливаются.
-- Лобби, магазин украшений и фонов лобби за игровые монеты (без лутбоксов и без реальных денег).
-
-## Список изменений
-
-### 0.1.0 (первая тестовая версия)
-- Три полные карты: Особняк, Деревня, Корабль; лестницы между этажами и палубами.
-- 3 убийцы и 5 выживших со способностями; боты трёх уровней сложности.
-- Лобби с анимированным фоном, 4 покупаемых фона, магазин, задания (заготовка), лор, настройки.
-- Android-обёртка: полноэкранный горизонтальный режим, работает без интернета, кнопка «Назад» ставит игру на паузу.
-- SHA-256 APK: `122615fbc80c1a37f73890fc941e2f1a1c9c9cf959ecc0150e7b0fd57ed15e8d`
-
-## Сборка
-
-- `python3 build.py`: собирает `dist/the-wrong-place.html` из `src/`.
-- `python3 tests/browser_test.py 100`: тесты в headless-браузере (сотни матчей ботов, проверки механик).
-- `android/build_apk.sh`: подписанный APK (ключ хранится отдельно и в репозиторий не попадает).
-
-## Вдохновлено / авторы
-
-- Вдохновлено игрой **Dead by Daylight** (Behaviour Interactive). Это не копия: персонажи, карты и механики свои.
-- Вся графика оригинальная и нарисована кодом (пиксель-арт на canvas), все звуки синтезируются WebAudio. Чужих ассетов нет.
-- Идея и тестирование: Максим. Разработка: LuntikVisuals.
-
-*Некоммерческий фанатский проект. Не связан с Behaviour Interactive и не одобрен ею.*
+- Бег и стамина: кнопка «Бег»/Shift, полоска стамины, ×1.5 скорость, отдышка после истощения; анимация бега с пылью; боты бегут.
+- Шкафчики (прятки, сердцебиение слышно, убийца вытаскивает сразу на плечо), следы бегущих (только для убийцы, 5 с), погоня (процедурная музыка + красные края), «последний шанс» (сирена, красный свет у ворот, убийца +10%).
+- Погода/события: ясно, туман, гроза с молниями, отключение света (~10 с). Люка и тотемов нет.
+- Новые персонажи: Пустой Пастух (Колокол, Овцы, пассив Стадо), Итан Коул (Молитва), Лили Марш (Свисток), Они (только модель/анимации/базовая атака).
+- Карты: разнос одинаковых декораций по типу (колодцы ≥12 клеток, ничего не слипается), деревья без кучек; здания деревни — 2 входа, лишние дыры/проёмы подряд убраны (особняк: дыра не ближе 4 клеток к двери, реже). mapaudit проверяет декор и входы.
+- Они: Тотем хранителя (до 4, замедление + Проклятие 20 с, видно сквозь стены), Телепорт к тотему, Рывок (удар катаной), Друзья из прошлого (5 душ на 60 с, слабый урон, не кладут). Пассивки нет.
+- Баланс по таблице TUNE (карта × убийца), цель 35–50% побед убийцы.
+- New lobby: profile (avatar/name/level/stats), trophies & ranks, Season I pass, coins + souls, menu, news/friends/club ("скоро"), daily rewards, quests, mode/map card.
+- Modes: Обычный and Рейтинг (trophies won/lost by result, saved locally).
+- Shop tabs: Акции, Фоны, Персонажи, Ресурсы. No real-money purchases.
+- All overlays scroll on small screens and have a round X (top-left) back to the lobby; Android Back works there too.
+- In-match navigation arrows: survivors → nearest unfinished generator + teammates; killer → nearest hook; floor-aware with stair hints.
+- Hooks grouped in clusters (gallows) on all maps; generator speed retuned per map (village ×2.0, ship ×1.9).
+- Rounded UI corners everywhere; pixel-aligned characters (integer device-pixel world scale, integer sprite units, symmetric rounding).
+- Map audit fixes: village loft wall hole closed, ship hold hooks moved off the wall, ship deck cover props, mansion large empty rooms filled; new tests/mapaudit.js.
+- Map spacing pass (relayoutObjects): generators ≥10 tiles apart per floor and ≥6 across floors; hooks stay in their area but ≥4 tiles apart, each on its own post, clear of walls/props/stairs/gens; items moved off other objects. Village loft keeps a single hook (room too small for two). Repair speed: mansion ×0.9, village ×2.4, ship ×1.8. tests/mapaudit.js checks all of it.

@@ -17,6 +17,10 @@ permissions:
   contents: write
   pages: write
 
+env:
+  VER: v0.1.1
+  APK_SHA256: 1c6b6760a7c683bcf96cb8490e280c3565e85c119fad79fcaa5f7b72a8019aea
+
 jobs:
   publish:
     runs-on: ubuntu-latest
@@ -34,30 +38,32 @@ jobs:
           ls -l .github/bootstrap
           cat $(ls .github/bootstrap/the-wrong-place.apk.b64.part* | sort -V) | base64 -d > /tmp/p/the-wrong-place.apk
           printf '%s  /tmp/p/the-wrong-place.apk\n' "$(cut -d' ' -f1 .github/bootstrap/the-wrong-place.apk.sha256)" | sha256sum -c -
-          printf '%s  /tmp/p/the-wrong-place.apk\n' "122615fbc80c1a37f73890fc941e2f1a1c9c9cf959ecc0150e7b0fd57ed15e8d" | sha256sum -c -
+          printf '%s  /tmp/p/the-wrong-place.apk\n' "$APK_SHA256" | sha256sum -c -
           ls -l /tmp/p
 
-      - name: Create release v0.1.0 with APK
+      - name: Create release with APK
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
           test -f /tmp/p/the-wrong-place.apk || exit 0
-          gh release view v0.1.0 >/dev/null 2>&1 && { printf 'release exists\n'; exit 0; }
+          gh release view "$VER" >/dev/null 2>&1 && { printf 'release exists\n'; exit 0; }
           cat > /tmp/notes.md <<'NOTES'
-          «The Wrong Place» 0.1.0: первая тестовая версия
+          «The Wrong Place» 0.1.1
 
-          - Три карты: Особняк (двор и 4 этажа), Деревня, Корабль (3 палубы).
-          - 3 убийцы и 5 выживших со способностями, боты трёх уровней сложности.
-          - Лобби, магазин украшений и фонов лобби (только игровые монеты).
-          - Полноэкранный горизонтальный режим, работает без интернета.
+          - Бег и стамина для обеих сторон, полоска стамины, анимация бега; боты бегают.
+          - Шкафчики, следы бегущих (видит только убийца), музыка и красные края при погоне, «последний шанс» у ворот.
+          - Погода и события матча: туман, гроза с молниями, отключение света.
+          - Новые персонажи: убийцы Пустой Пастух и Они (тотемы, телепорт, рывок, души самураев), выжившие Итан Коул и Лили Марш.
+          - Новое лобби и интерфейс, разнесённые генераторы, крюки и декорации, здания с нормальными входами.
+          - Баланс убийц 35–50% на всех картах (боты).
 
-          Android 7.0+, versionCode 1 / versionName 0.1.0, пакет com.luntikvisuals.wrongplace.
-          SHA-256: 122615fbc80c1a37f73890fc941e2f1a1c9c9cf959ecc0150e7b0fd57ed15e8d
+          Android 7.0+, versionCode 2 / versionName 0.1.1, пакет com.luntikvisuals.wrongplace (та же подпись, что у 0.1.0).
+          SHA-256: 1c6b6760a7c683bcf96cb8490e280c3565e85c119fad79fcaa5f7b72a8019aea
           Некоммерческий фанатский проект, вдохновлён Dead by Daylight.
           NOTES
           sed -i 's/^          //' /tmp/notes.md
-          gh release create v0.1.0 /tmp/p/the-wrong-place.apk --target main --latest --title "The Wrong Place v0.1.0" --notes-file /tmp/notes.md
+          gh release create "$VER" /tmp/p/the-wrong-place.apk --target main --latest --title "The Wrong Place $VER" --notes-file /tmp/notes.md
 
       - name: Remove payload, sync gh-pages with main
         run: |
@@ -67,12 +73,12 @@ jobs:
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git pull -q --ff-only origin main || true
           git rm -q -r .github/bootstrap
-          git commit -m "Remove v0.1.0 bootstrap payload (APK published in Release v0.1.0)"
+          git commit -m "Remove $VER bootstrap payload (APK published in Release $VER)"
           git push origin HEAD:main
           MAIN=$(git rev-parse HEAD)
           if git fetch origin gh-pages; then
             git checkout -B gh-pages origin/gh-pages
-            git merge --no-edit -X theirs "$MAIN" -m "Sync gh-pages with main (v0.1.0)" || true
+            git merge --no-edit -X theirs "$MAIN" -m "Sync gh-pages with main ($VER)" || true
             if ! git diff --quiet "$MAIN" HEAD; then git read-tree --reset -u "$MAIN" && git commit -m "Sync gh-pages tree with main"; fi
           else
             git checkout -B gh-pages "$MAIN"

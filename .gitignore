@@ -12,3 +12,4 @@ videos/
 dist/
 android/out/
 tests/last_results.json
+../wrongplace-keys/
