@@ -7,6 +7,11 @@ const idx=(x,y)=>y*FW+x;
 function mkFloor(name,fill,pal,outdoor){return{name,g:new Uint8Array(FW*FH).fill(fill),blk:new Uint8Array(FW*FH),pal,outdoor:!!outdoor,deco:[],rugs:[]}}
 function border(F,t){for(let x=0;x<FW;x++){F.g[idx(x,0)]=t;F.g[idx(x,FH-1)]=t}for(let y=0;y<FH;y++){F.g[idx(0,y)]=t;F.g[idx(FW-1,y)]=t}}
 
+/* Decoration spacing (v0.1.1): identical props keep a minimum distance per type (wells far apart), no props touching */
+const DECO_SAME={well:12,altar:12,engine:8,lifeboat:6,mast:6,cart:8,clock:6,globe:6,crib:4,sofa:4,hay:4,dummy:4,pew:2},DECO_ANY=['table','crate','barrel','shelf','sofa','clock','globe','crib','dummy','bed'];
+function decoOk(F,x,y,k){for(const d of F.deco){const c=Math.max(Math.abs(d.x-x),Math.abs(d.y-y));if(c<2||d.k===k&&c<(DECO_SAME[k]||3))return false}return true}
+function pickDeco(F,x,y,list){const ok=list.filter(k=>decoOk(F,x,y,k));return ok.length?pick(ok):null}
+function treesAround(F,x,y){let n=0;for(let dy=-1;dy<=1;dy++)for(let dx=-1;dx<=1;dx++)if((dx||dy)&&F.g[idx(x+dx,y+dy)]===TI.TREE)n++;return n}
 /* House-like floor: 4x3 room grid, doors (1 wide), survivor-only gaps, optional open halls */
 function roomFloor(F,seedF,openP,wallT){
  wallT=wallT||TI.WALL;
@@ -19,7 +24,7 @@ function roomFloor(F,seedF,openP,wallT){
  const seg=(cells)=>{ // cells: list of [x,y] of an internal wall segment (excluding posts)
   if(opened<2&&rnd()<openP){opened++;for(const[x,y]of cells)F.g[idx(x,y)]=F.floorT;return}
   const di=ri(1,cells.length-2),[dx,dy]=cells[di];F.g[idx(dx,dy)]=F.floorT;F.doors.push({x:dx,y:dy,vert:cells[0][0]===cells[1][0]});
-  if(rnd()<0.5){let gi=ri(1,cells.length-2),n=0;while(Math.abs(gi-di)<2&&n++<20)gi=ri(1,cells.length-2);if(Math.abs(gi-di)>=2){const[gx,gy]=cells[gi];F.g[idx(gx,gy)]=TI.GAP}}
+  if(rnd()<0.3){let gi=ri(1,cells.length-2),n=0;while(Math.abs(gi-di)<4&&n++<20)gi=ri(1,cells.length-2);if(Math.abs(gi-di)>=4){const[gx,gy]=cells[gi];F.g[idx(gx,gy)]=TI.GAP}}
  };
  for(const x of [10,20,30])for(let r=0;r<3;r++){const c=[];for(let y=ys[r]+1;y<ys[r+1];y++)c.push([x,y]);seg(c)}
  for(const y of [10,20])for(let k=0;k<4;k++){const c=[];for(let x=xs[k]+1;x<xs[k+1];x++)c.push([x,y]);seg(c)}
@@ -55,19 +60,21 @@ function buildMap(kind){
   M.gates.push({f:0,tiles:[[0,14],[0,15]],x:cc(1),y:15*T,side:-1,prog:0,open:false,name:'Западные ворота'});
   M.gates.push({f:0,tiles:[[FW-1,14],[FW-1,15]],x:cc(FW-2),y:15*T,side:1,prog:0,open:false,name:'Восточные ворота'});
   for(const g of M.gates)for(const[x,y]of g.tiles){Y.g[idx(x,y)]=TI.GATE;res(0,x+(g.side<0?1:-1),y);res(0,x+(g.side<0?2:-2),y)}
-  M.genSpots=[[0,8,21],[1,5,15],[2,25,5],[3,15,24],[4,34,15]];
-  M.hookSpots=[[0,5,6],[0,34,6],[0,7,26],[0,32,26],[0,20,22],[1,34,5],[2,6,24],[3,24,14],[4,15,5]];
+  M.genMul=TUNE.mansion.gen;M.genSpots=[[0,8,21],[1,5,15],[2,25,5],[3,15,24],[4,34,15]];
+  // hooks stand in clusters (gallows): one 3-hook gallows in the yard, a 2-hook gallows on every floor
+  M.hookSpots=[[0,18,24],[0,20,24],[0,22,24],[1,32,5],[1,34,5],[2,6,24],[2,8,24],[3,22,14],[3,24,14],[4,13,5],[4,15,5]];
   M.spawnK={f:0,x:20,y:16};
   M.spawnS=[[0,3,27],[0,36,27],[2,15,15],[3,35,24],[4,5,24],[1,15,5]];
   // yard trees & hedges
-  for(let n=0;n<60;n++){const x=ri(2,FW-3),y=ri(14,FH-3);if(Math.abs(x-20)<3&&y<20)continue;if(Y.g[idx(x,y)]===TI.GRASS&&!isRes(0,x,y))Y.g[idx(x,y)]=TI.TREE}
-  for(let n=0;n<14;n++){const x=ri(2,10)+(rnd()<0.5?0:27),y=ri(2,12);if(Y.g[idx(x,y)]===TI.GRASS&&!isRes(0,x,y))Y.g[idx(x,y)]=TI.TREE}
+  for(let n=0;n<60;n++){const x=ri(2,FW-3),y=ri(14,FH-3);if(Math.abs(x-20)<3&&y<20)continue;if(Y.g[idx(x,y)]===TI.GRASS&&!isRes(0,x,y)&&treesAround(Y,x,y)<2)Y.g[idx(x,y)]=TI.TREE}
+  for(let n=0;n<14;n++){const x=ri(2,10)+(rnd()<0.5?0:27),y=ri(2,12);if(Y.g[idx(x,y)]===TI.GRASS&&!isRes(0,x,y)&&treesAround(Y,x,y)<2)Y.g[idx(x,y)]=TI.TREE}
  } else { buildAscii(M,kind,res,isRes,link) }
- for(const[f,x,y]of[...M.genSpots,...M.hookSpots,...M.spawnS,[M.spawnK.f,M.spawnK.x,M.spawnK.y]]){const F=M.floors[f];if(SOLID[F.g[idx(x,y)]]||F.g[idx(x,y)]===TI.GAP)F.g[idx(x,y)]=F.outdoor?TI.GRASS:F.floorT;res(f,x,y);for(const[dx,dy]of[[1,0],[-1,0],[0,1],[0,-1]])if(passK(F,x+dx,y+dy,'k'))res(f,x+dx,y+dy)}
+ for(const[f,x,y]of[...M.genSpots,...M.hookSpots,...M.spawnS,[M.spawnK.f,M.spawnK.x,M.spawnK.y]]){const F=M.floors[f];if(F.g[idx(x,y)]===TI.WALL||F.g[idx(x,y)]===TI.GAP||F.g[idx(x,y)]===TI.STAIR)WP.dbg.log.push('spot on '+F.g[idx(x,y)]+' '+[f,x,y]);if(SOLID[F.g[idx(x,y)]]||F.g[idx(x,y)]===TI.GAP)F.g[idx(x,y)]=F.outdoor?TI.GRASS:F.floorT;res(f,x,y);for(const[dx,dy]of[[1,0],[-1,0],[0,1],[0,-1]])if(passK(F,x+dx,y+dy,'k'))res(f,x+dx,y+dy)}
  // generators & hooks occupy their tile
  M.gens=M.genSpots.map(([f,x,y],i)=>({id:i,f,x:cc(x),y:cc(y),tx:x,ty:y,p:0,done:false,regress:false,boost:0,users:0,noise:0}));
  M.hooks=M.hookSpots.map(([f,x,y],i)=>({id:i,f,x:cc(x),y:cc(y),tx:x,ty:y,victim:null}));
  for(const o of[...M.gens,...M.hooks])M.floors[o.f].blk[idx(o.tx,o.ty)]=1;
+ for(const h of M.hooks)h.right=M.hooks.some(o=>o.f===h.f&&o.ty===h.ty&&o.tx===h.tx+2);
  placeAsciiFurn(M,res,isRes);
  // furniture next to doors, falls into the doorway
  M.floors.forEach((F,f)=>{if(!F.doors)return;for(const d of F.doors){if(rnd()>0.6)continue;
@@ -77,18 +84,25 @@ function buildMap(kind){
     F.blk[idx(cx,cy)]=1;if(!stillConnected(F)){F.blk[idx(cx,cy)]=0;continue}
     M.furn.push({id:M.furn.length,f,tx:cx,ty:cy,fx:d.x,fy:d.y,x:cc(cx),y:cc(cy),kind:rnd()<0.5?'stand':'ward',state:'up',anim:0,breakP:0});res(f,cx,cy);break}}});
  // decorations (blocking) in rooms
- M.floors.forEach((F,f)=>{if(!F.rooms)return;for(const R of F.rooms){const n=ri(1,3);for(let k=0;k<n;k++){const x=ri(R.x0+1,R.x1-1),y=ri(R.y0+1,R.y1-1);if(!passK(F,x,y,'k')||isRes(f,x,y)||F.g[idx(x,y)]===TI.STAIR)continue;
+ M.floors.forEach((F,f)=>{if(!F.rooms)return;for(const R of F.rooms){const ar=(R.x1-R.x0)*(R.y1-R.y0),n=ri(1,3)+(ar>60?1:0)+(ar>110?1:0);for(let k=0;k<n;k++){const x=ri(R.x0+1,R.x1-1),y=ri(R.y0+1,R.y1-1);if(!passK(F,x,y,'k')||isRes(f,x,y)||F.g[idx(x,y)]===TI.STAIR)continue;
    let near=false;for(const[dx,dy]of[[1,0],[-1,0],[0,1],[0,-1],[1,1],[-1,-1],[1,-1],[-1,1]]){const t=F.g[idx(x+dx,y+dy)];if(t===TI.STAIR||t===TI.GAP||F.blk[idx(x+dx,y+dy)])near=true}if(near)continue;
-   F.blk[idx(x,y)]=1;if(!stillConnected(F)){F.blk[idx(x,y)]=0;continue}F.deco.push({x,y,k:pick(F.pal==='attic'?['crate','crate','dummy']:F.pal==='lib'?['shelf','table','globe']:F.pal==='bed'?['bed','table','crib']:F.pal==='deck'?['crate','barrel']:['table','clock','sofa','barrel'])});res(f,x,y)}
+   const dk=pickDeco(F,x,y,F.pal==='attic'?['crate','crate','dummy']:F.pal==='lib'?['shelf','table','globe']:F.pal==='bed'?['bed','table','crib']:F.pal==='deck'?['crate','barrel']:['table','clock','sofa','barrel']);if(!dk)continue;F.blk[idx(x,y)]=1;if(!stillConnected(F)){F.blk[idx(x,y)]=0;continue}F.deco.push({x,y,k:dk});res(f,x,y)}
    if(rnd()<0.6)F.rugs.push({x:ri(R.x0+1,R.x1-4),y:ri(R.y0+1,R.y1-3),w:3,h:2,c:pick(['#5a1e22','#2a3a5a','#4a3a1a'])})}});
+ // fill big empty zones inside the house with extra props (no open area farther than 4 tiles from cover)
+ M.floors.forEach((F,f)=>{if(!F.rooms)return;for(let pass=0;pass<6;pass++){let worst=0,wx=0,wy=0;for(let y=1;y<FH-1;y++)for(let x=1;x<FW-1;x++){if(!passK(F,x,y,'k')||isRes(f,x,y))continue;let d=9;
+   for(let yy=Math.max(0,y-5);yy<=Math.min(FH-1,y+5);yy++)for(let xx=Math.max(0,x-5);xx<=Math.min(FW-1,x+5);xx++){const i=idx(xx,yy);if(SOLID[F.g[i]]||F.blk[i]||F.g[i]===TI.STAIR)d=Math.min(d,Math.max(Math.abs(xx-x),Math.abs(yy-y)))}
+   if(d>worst){worst=d;wx=x;wy=y}}
+  if(worst<=4)break;const dk=pickDeco(F,wx,wy,F.pal==='attic'?['crate','dummy']:F.pal==='lib'?['shelf','globe']:F.pal==='bed'?['bed','crib']:['table','clock','sofa'])||pickDeco(F,wx,wy,DECO_ANY);if(!dk)break;F.blk[idx(wx,wy)]=1;if(!stillConnected(F)){F.blk[idx(wx,wy)]=0;break}F.deco.push({x:wx,y:wy,k:dk});res(f,wx,wy)}});
  // items
  if(!M.itemsFixed){const itemKinds=['medkit','medkit','toolbox','medkit','toolbox','medkit','medkit','toolbox'];
  for(let n=0,tries=0;n<itemKinds.length&&tries<500;tries++){const f=ri(0,M.floors.length-1),F=M.floors[f],x=ri(1,FW-2),y=ri(1,FH-2);if(!passK(F,x,y,'k')||isRes(f,x,y)||F.g[idx(x,y)]===TI.STAIR)continue;M.items.push({f,x:cc(x),y:cc(y),kind:itemKinds[n],taken:false});n++;res(f,x,y)}}
+ relayoutObjects(M);placeLockers(M);
  // sanity: every floor fully connected
  if(kind==='mansion')M.floors.forEach((F,f)=>{if(!stillConnected(F))WP.dbg.log.push('map '+kind+' floor '+f+' disconnected')});
  for(const st of M.stairs){if(!passK(M.floors[st.f],st.ax,st.ay,'k'))WP.dbg.log.push('stair arrival blocked '+kind+' f'+st.f+' '+st.ax+','+st.ay)}
  M.stairAt=M.floors.map(()=>new Map());for(const s of M.stairs)M.stairAt[s.f].set(idx(s.x,s.y),s);
  M.N=M.floors.length*FW*FH;M.prev=new Int32Array(M.N);M.stamp=new Uint32Array(M.N);M.depth=new Uint16Array(M.N);M.st=1;M.q=new Int32Array(M.N);
+ {const SH={mansion:['Двор','1 эт.','2 эт.','3 эт.','Чердак'],village:['Улица','Чердаки'],ship:['Палуба','Каюты','Трюм']}[kind];M.floors.forEach((F,i)=>F.short=SH[i]||F.name)}
  globalCheck(M);
 M.prev=new Int32Array(M.N);M.stamp=new Uint32Array(M.N);M.depth=new Uint16Array(M.N);M.st=1;M.q=new Int32Array(M.N);
  return M;
@@ -119,7 +133,7 @@ function nodeXY(n){const r=n%(FW*FH);return[r%FW,(r/FW)|0]}
 const ACH={'=':TI.ROAD,'#':TI.WALL,'.':TI.FLOOR,',':TI.GRASS,':':TI.FIELD,'~':TI.WATER,'f':TI.FENCE,'T':TI.TREE,'_':TI.VOID,'g':TI.GAP,'G':TI.GATE};
 const ADECO={b:'bed',t:'table',c:'crate',x:'barrel',h:'hay',p:'pew',a:'altar',w:'well',m:'mast',l:'lifeboat',r:'engine',o:'shelf'};
 function buildAscii(M,kind,res,isRes,link){
- const defs=ASCII_MAPS[kind];M.name=kind==='village'?'Деревня':'Корабль';M.genMul=kind==='village'?1.5:1.6;M.genSpots=[];M.hookSpots=[];M.spawnS=[];M.itemsFixed=true;const stairs={},furn=[],gates=[];
+ const defs=ASCII_MAPS[kind];M.name=kind==='village'?'Деревня':'Корабль';M.genMul=TUNE[kind].gen;M.genSpots=[];M.hookSpots=[];M.spawnS=[];M.itemsFixed=true;const stairs={},furn=[],gates=[];
  defs.forEach((d,f)=>{const F=mkFloor(d.name,TI.FLOOR,d.pal,d.outdoor);F.floorT=d.pal==='deck'?TI.DECK:TI.FLOOR;M.floors.push(F);
   for(let y=0;y<FH;y++)for(let x=0;x<FW;x++){const ch=d.rows[y][x];if(ACH[ch]!=null){F.g[idx(x,y)]=ACH[ch];continue}
    // object on a walkable base: indoor floor if any neighbour is '.', else grass/deck
@@ -152,3 +166,36 @@ function placeAsciiFurn(M,res,isRes){for(const p of M.pendingFurn||[]){const F=M
 function globalCheck(M){for(const kind of['k','s']){let tot=0;for(let f=0;f<M.floors.length;f++)for(let y=0;y<FH;y++)for(let x=0;x<FW;x++)if(passK(M.floors[f],x,y,kind))tot++;
  const s=M.spawnK;bfs(M,kind,s.f,s.x,s.y,null,0);if(M.qt!==tot){const st=M.st;let ex=[];for(let f=0;f<M.floors.length;f++)for(let y=0;y<FH;y++)for(let x=0;x<FW;x++)if(passK(M.floors[f],x,y,kind)&&M.stamp[f*FW*FH+idx(x,y)]!==st&&ex.length<6)ex.push(f+':'+x+','+y);WP.dbg.log.push(M.kind+': '+(tot-M.qt)+' tiles unreachable for '+kind+' e.g. '+ex.join(' '))}
  for(const o of[...M.gens,...M.hooks])if(bfs(M,'k',s.f,s.x,s.y,(f,x,y)=>f===o.f&&Math.abs(x-o.tx)+Math.abs(y-o.ty)===1)<0)WP.dbg.log.push(M.kind+': object unreachable '+o.f+','+o.tx+','+o.ty)}}
+
+/* Spacing pass (all maps): generators >=10 tiles apart on a floor and never stacked across floors (>=6);
+   hooks keep their area but stand >=4 tiles apart (3 clear tiles), each on its own post, not touching walls/props/stairs/gens;
+   items never sit on/next to other objects. Deterministic, keeps every floor connected. */
+function relayoutObjects(M){
+ const ch=(ax,ay,bx,by)=>Math.max(Math.abs(ax-bx),Math.abs(ay-by));
+ const fixed=f=>{const L=[];for(const s of M.stairs)if(s.f===f)L.push([s.x,s.y,3]);for(const g of M.gates)if(g.f===f)for(const[x,y]of g.tiles)L.push([x,y,3]);
+  for(const u of M.furn)if(u.f===f){L.push([u.tx,u.ty,2]);L.push([u.fx,u.fy,2])}for(const s of M.spawnS)if(s[0]===f)L.push([s[1],s[2],2]);if(M.spawnK.f===f)L.push([M.spawnK.x,M.spawnK.y,2]);return L};
+ const clearOf=(L,x,y,cap)=>L.every(([a,b,d])=>ch(a,b,x,y)>=Math.min(d,cap||9));
+ const ring=(F,x,y,strict)=>{for(let dy=-1;dy<=1;dy++)for(let dx=-1;dx<=1;dx++){if(!dx&&!dy)continue;if(!strict&&dx&&dy)continue;const i=idx(x+dx,y+dy),t=F.g[i];if(SOLID[t]||t===TI.STAIR||t===TI.GAP||F.blk[i]||t===TI.WATER||t===TI.VOID)return false}return true};
+ const base=(F,x,y)=>x>1&&y>1&&x<FW-2&&y<FH-2&&passK(F,x,y,'k')&&passK(F,x,y,'s')&&F.g[idx(x,y)]!==TI.STAIR;
+ const search=(f,x0,y0,R,ok)=>{const C=[];for(let y=Math.max(2,y0-R);y<=Math.min(FH-3,y0+R);y++)for(let x=Math.max(2,x0-R);x<=Math.min(FW-3,x0+R);x++)C.push([Math.hypot(x-x0,y-y0)+(x-x0)*1e-3+(y-y0)*1e-4,x,y]);C.sort((a,b)=>a[0]-b[0]);
+  const F=M.floors[f],b0=reach(f);for(const[,x,y]of C){if(!ok(x,y))continue;F.blk[idx(x,y)]=1;const r=reach(f);if(r[0]===b0[0]-(b0[2].has(idx(x,y))?1:0)&&r[1]===b0[1]-(b0[3].has(idx(x,y))?1:0))return[x,y];F.blk[idx(x,y)]=0}return null};
+ function reach(f){const F=M.floors[f],src=[];for(const s of M.stairs){if(s.f===f)src.push([s.ax,s.ay])}for(const g of M.gates)if(g.f===f)src.push([g.ix,g.iy]);for(const s of M.spawnS)if(s[0]===f)src.push([s[1],s[2]]);
+  const out=[];for(const k of['k','s']){const seen=new Set(),q=src.filter(([x,y])=>passK(F,x,y,k)).map(([x,y])=>idx(x,y));q.forEach(i=>seen.add(i));while(q.length){const i=q.pop(),x=i%FW,y=(i/FW)|0;for(const[dx,dy]of[[1,0],[-1,0],[0,1],[0,-1]]){const X=x+dx,Y=y+dy,j=idx(X,Y);if(!seen.has(j)&&passK(F,X,Y,k)){seen.add(j);q.push(j)}}}out.push(seen)}return[out[0].size,out[1].size,out[0],out[1]]}
+ const move=(o,x,y)=>{o.tx=x;o.ty=y;o.x=cc(x);o.y=cc(y)};
+ for(const o of[...M.gens,...M.hooks])M.floors[o.f].blk[idx(o.tx,o.ty)]=0;
+ // generators
+ const gd=[];for(const g of M.gens){const F=M.floors[g.f],L=fixed(g.f);
+  let p=null;for(const lv of[0,1]){const ok=(x,y)=>base(F,x,y)&&(lv||ring(F,x,y,false))&&clearOf(L,x,y,lv?2:9)&&gd.every(o=>Math.hypot(o.tx-x,o.ty-y)>=(o.f===g.f?10:6));
+  p=search(g.f,g.tx,g.ty,14,ok);if(p)break}if(p)move(g,p[0],p[1]);else{F.blk[idx(g.tx,g.ty)]=1;WP.dbg.log.push('gen spacing failed '+[g.f,g.tx,g.ty])}gd.push(g)}
+ // hooks: clusters of the original layout keep their area
+ const groups=[];for(const h of M.hooks){const gr=groups.find(G=>G[0].f===h.f&&G.some(o=>ch(o.tx,o.ty,h.tx,h.ty)<=3));gr?gr.push(h):groups.push([h])}
+ const hd=[];for(const G of groups){const f=G[0].f,F=M.floors[f],L=fixed(f),ax=Math.round(G.reduce((s,h)=>s+h.tx,0)/G.length),ay=Math.round(G.reduce((s,h)=>s+h.ty,0)/G.length);
+  for(const h of G){let p=null;for(const lv of[0,1,2]){const strict=lv===0;const ok=(x,y)=>base(F,x,y)&&ring(F,x,y,strict)&&clearOf(L,x,y,lv===2?2:9)&&hd.every(o=>o.f!==f||ch(o.tx,o.ty,x,y)>=4)&&M.gens.every(g=>g.f!==f||ch(g.tx,g.ty,x,y)>=4)&&M.items.every(i=>i.f!==f||ch(tc(i.x),tc(i.y),x,y)>=2);
+    p=search(f,ax,ay,strict?9:12,ok);if(p)break}
+   if(p)move(h,p[0],p[1]);else{F.blk[idx(h.tx,h.ty)]=1;WP.dbg.log.push('hook spacing failed '+[f,h.tx,h.ty])}hd.push(h)}}
+ for(const h of M.hooks)h.right=false;
+ // items: off other objects
+ for(const it of M.items){const f=it.f,F=M.floors[f],L=fixed(f).concat(M.gens.filter(g=>g.f===f).map(g=>[g.tx,g.ty,2]),M.hooks.filter(h=>h.f===f).map(h=>[h.tx,h.ty,2]));
+  const others=()=>M.items.filter(o=>o!==it&&o.f===f).map(o=>[tc(o.x),tc(o.y),2]);const ok=(x,y)=>base(F,x,y)&&clearOf(L.concat(others()),x,y);
+  if(!ok(tc(it.x),tc(it.y))){for(let R=1;R<10;R++){let done=false;for(let y=tc(it.y)-R;y<=tc(it.y)+R&&!done;y++)for(let x=tc(it.x)-R;x<=tc(it.x)+R;x++)if(ok(x,y)){it.x=cc(x);it.y=cc(y);done=true;break}if(done)break}}}
+}

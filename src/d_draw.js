@@ -2,13 +2,14 @@
 const OUT='#120a0c';
 function shade(hex,k){const n=parseInt(hex.slice(1),16);let r=n>>16,g=(n>>8)&255,b=n&255;if(k>0){r+=(255-r)*k;g+=(255-g)*k;b+=(255-b)*k}else{r*=1+k;g*=1+k;b*=1+k}return'rgb('+(r|0)+','+(g|0)+','+(b|0)+')'}
 /* box with outline + lit top / shaded right side (pseudo-3D face shading) */
-function vbox(c,x,y,w,h,col,o){x=Math.round(x);y=Math.round(y);c.fillStyle=OUT;c.fillRect(x-1,y-1,w+2,h+2);c.fillStyle=col;c.fillRect(x,y,w,h);
+function vbox(c,x,y,w,h,col,o){c.fillStyle=OUT;c.fillRect(x-1,y-1,w+2,h+2);c.fillStyle=col;c.fillRect(x,y,w,h);
  if(o!==0){c.fillStyle=shade(col,0.22);c.fillRect(x,y,w,Math.max(1,Math.round(h*0.22)));c.fillStyle=shade(col,-0.3);c.fillRect(x+w-Math.max(1,Math.round(w*0.25)),y,Math.max(1,Math.round(w*0.25)),h)}}
 function shadow(c,x,y,rx,ry,a){c.fillStyle='rgba(0,0,0,'+(a||0.4)+')';c.beginPath();c.ellipse(x,y,rx,ry,0,0,6.283);c.fill()}
 const CHARCACHE={};
 /* Character renderer. pose: idle|walk|run|crouch|prone|down|carried|hooked|repair|vault|hit|attack|stun|climb */
 function drawChar(c,e,x,y,pose,t,o){
- o=o||{};const d=e.def,K=e.side==='k',P=K?2.6:2;const face=o.face!=null?o.face:e.face;
+ o=o||{};const d=e.def,K=e.side==='k',P=K?3:2;
+ const _fr=c.fillRect,sr=v=>v<0?-Math.round(-v):Math.round(v);c.fillRect=function(x,y,w,h){const x0=sr(x),y0=sr(y);_fr.call(this,x0,y0,sr(x+w)-x0,sr(y+h)-y0)};const face=o.face!=null?o.face:e.face;
  const fx=Math.cos(face),fy=Math.sin(face);const dir=Math.abs(fy)>Math.abs(fx)*1.1?(fy>0?'down':'up'):'side',flip=fx<0;
  const white=o.white;const C=col=>white?'#ffffff':col;
  c.save();c.translate(Math.round(x),Math.round(y));
@@ -23,15 +24,19 @@ function drawChar(c,e,x,y,pose,t,o){
  const crouch=pose==='crouch'?P*3:0;
  let by=-bob+crouch;
  if(pose==='vault'){by-=Math.sin(Math.PI*(o.k||0))*14}
+ if(d.draw){(d.draw==='oni'?drawOni:drawShepherd)(c,e,d,pose,t,o,dir,sw,bob,by,C);c.restore();delete c.fillRect;return}
+ const sm=!K&&d.small;
  // legs
- const legH=6*P,legW=3*P;
+ const legH=(sm?4:6)*P,legW=3*P;
  if(pose!=='hooked'){vbox(c,-4*P,-legH+(sw>0?-sw*P*1.5:0)+crouch*0.6,legW,legH-(sw>0?-sw*P*1.5:0)-crouch*0.6,C(shade(d.body,-0.45)));vbox(c,1*P,-legH+(sw<0?sw*P*1.5:0)+crouch*0.6,legW,legH-(sw<0?sw*P*1.5:0)-crouch*0.6,C(shade(d.body,-0.5)))}
  else{const dl=Math.sin(t*3)*P;vbox(c,-4*P,-legH+dl,legW,legH,C(shade(d.body,-0.45)));vbox(c,1*P,-legH-dl,legW,legH,C(shade(d.body,-0.5)))}
  // body
- const bw=(K?10:9)*P,bh=(K?9:7)*P,bx=-bw/2,byy=-legH-bh+by;
+ const bw=(K?10:sm?8:9)*P,bh=(K?9:sm?6:7)*P,bx=-bw/2,byy=-legH-bh+by;
  if(K&&d.id==='bride'){c.fillStyle=OUT;c.beginPath();c.moveTo(-bw/2-3,-1);c.lineTo(bw/2+3,-1);c.lineTo(bw/2-1,byy-1);c.lineTo(-bw/2+1,byy-1);c.fill();c.fillStyle=C('#e9e4dc');c.beginPath();c.moveTo(-bw/2-2,-2);c.lineTo(bw/2+2,-2);c.lineTo(bw/2-2,byy);c.lineTo(-bw/2+2,byy);c.fill();c.fillStyle=C('#c8c0b4');c.fillRect(bw/4,byy,bw/4-2,-byy-2)}
  else vbox(c,bx,byy,bw,bh,C(d.body));
  if(!K){c.fillStyle=C(shade(d.body,-0.25));c.fillRect(bx+P,byy+bh-2*P,bw-2*P,P)}// belt
+ if(!K&&d.collar&&dir!=='up'){c.fillStyle=C('#f4f0e8');c.fillRect(-P,byy,2*P,P)}
+ if(sm&&dir!=='up'){c.fillStyle=C('#c02a2a');c.fillRect(-2*P,byy,4*P,P);c.fillRect(-P,byy+P,2*P,P)}
  if(K&&d.id==='stitches'){c.fillStyle=C('#2a1810');c.fillRect(bx+P,byy+2*P,bw-2*P,P);c.fillStyle=C(d.acc);c.fillRect(bx+2*P,byy+4*P,P,3*P)}
  if(K&&d.id==='rotjaw'){c.fillStyle=C(shade(d.body,-0.3));for(let i=0;i<3;i++)c.fillRect(bx+P+i*3*P,byy+P,P,bh-2*P)}
  // arms
@@ -51,7 +56,7 @@ function drawChar(c,e,x,y,pose,t,o){
  // head + hood
  const hw=(K?9:8)*P,hh=(K?8:7)*P,hx=-hw/2,hy=byy-hh+P*(K&&d.id==='rotjaw'?3:1);
  vbox(c,hx,hy,hw,hh,C(d.hood));
- if(dir!=='up'){const fw=dir==='side'?hw*0.55:hw*0.66,fh=hh*0.55,fxp=dir==='side'?hx+hw-fw-P*0.5:hx+(hw-fw)/2,fyp=hy+hh*0.35;
+ if(dir!=='up'){const fw=dir==='side'?Math.round(hw*0.55):2*Math.round(hw*0.33),fh=Math.round(hh*0.55),fxp=dir==='side'?Math.round(hx+hw-fw-P*0.5):-fw/2,fyp=Math.round(hy+hh*0.35);
   c.fillStyle=C(d.skin);c.fillRect(fxp,fyp,fw,fh);c.fillStyle=C(shade(d.skin,-0.25));c.fillRect(fxp,fyp,fw,P);
   if(!K&&d.hair){c.fillStyle=C(d.hair);c.fillRect(fxp,fyp,fw,P*0.8)}
   const ey=fyp+fh*0.45;c.fillStyle=K?(d.id==='bride'?'#000':'#ff2a20'):'#1a1010';
@@ -62,8 +67,9 @@ function drawChar(c,e,x,y,pose,t,o){
   if(pose==='down'||pose==='hooked'||pose==='hit'){c.fillStyle='#a0101a';c.fillRect(fxp+P,fyp+fh-P,P,P)}
  } else if(K&&d.id==='bride'){c.fillStyle='rgba(240,240,250,0.65)';c.fillRect(hx-P,hy,hw+2*P,hh*2.4)}
  c.fillStyle=C(shade(d.hood,0.25));c.fillRect(hx,hy,hw,P);// hood rim highlight
+ if(sm){vbox(c,hx-P,hy-P,hw+2*P,P,C('#6a5a2a'));vbox(c,hx+P,hy-3*P,hw-2*P,2*P,C('#7a6a34'))}
  if(K&&d.id==='rotjaw'){c.fillStyle=C(shade(d.hood,-0.2));c.fillRect(hx+P,hy-P*2,P*2,P*2);c.fillRect(hx+hw-P*3,hy-P*2,P*2,P*2)}
- c.restore();
+ c.restore();c.fillRect=_fr;delete c.fillRect;
 }
 function drawHeart(c,x,y,s,a){c.save();c.translate(x,y);c.scale(s,s);c.globalAlpha=a;c.fillStyle=OUT;c.fillRect(-6,-5,5,3);c.fillRect(1,-5,5,3);c.fillRect(-7,-3,14,4);c.fillRect(-5,1,10,2);c.fillRect(-3,3,6,2);c.fillRect(-1,5,2,1);
  c.fillStyle='#d01020';c.fillRect(-5,-4,3,2);c.fillRect(2,-4,3,2);c.fillRect(-6,-2,12,3);c.fillRect(-4,1,8,1);c.fillRect(-2,2,4,2);c.fillStyle='#ff8080';c.fillRect(-4,-3,2,1);c.restore()}
@@ -119,7 +125,7 @@ function drawGen(c,g,t){const X=g.x,Y=g.y+10;shadow(c,X,Y,16,5);vbox(c,X-14,Y-24
  const on=g.done||(g.users>0&&Math.sin(t*30)>0);c.fillStyle=g.done?'#80ff80':g.users?'#ffd040':'#a02020';c.fillRect(X+6,Y-20,4,4);if(on&&g.done){c.fillStyle='rgba(255,240,150,0.15)';c.beginPath();c.arc(X,Y-14,30,0,6.283);c.fill()}
  c.fillStyle='#2a2a30';c.fillRect(X-10,Y-14,12,8);for(let i=0;i<3;i++){c.fillStyle='#777';c.fillRect(X-9+i*4,Y-13,2,6)}
  if(!g.done&&g.p>0){c.fillStyle=OUT;c.fillRect(X-15,Y-40,30,5);c.fillStyle=g.regress?'#e04030':'#f0c040';c.fillRect(X-14,Y-39,28*g.p,3)}}
-function drawHook(c,h,t){const X=h.x,Y=h.y+8;shadow(c,X,Y,10,4);vbox(c,X-3,Y-58,6,58,'#3a2a20');vbox(c,X-3,Y-58,18,5,'#3a2a20');c.strokeStyle='#999';c.lineWidth=2;c.beginPath();c.moveTo(X+12,Y-53);c.lineTo(X+12,Y-42);c.arc(X+8,Y-42,4,0,Math.PI);c.stroke();
+function drawHook(c,h,t){const X=h.x,Y=h.y+8;shadow(c,X,Y,10,4);if(h.right){shadow(c,X+T,Y,T,5,0.3);c.fillStyle='#4a0a0c';for(let i=0;i<5;i++)c.fillRect(X+6+i*T*0.4|0,Y-2+(i%2)*3,3,2);vbox(c,X-3,Y-62,2*T+6,6,'#3a2a20');c.strokeStyle='#777';c.lineWidth=1;c.beginPath();c.moveTo(X+T-6,Y-56);c.lineTo(X+T-6,Y-30);c.moveTo(X+T+2,Y-56);c.lineTo(X+T+2,Y-36);c.stroke()}vbox(c,X-3,Y-58,6,58,'#3a2a20');vbox(c,X-3,Y-58,18,5,'#3a2a20');c.strokeStyle='#999';c.lineWidth=2;c.beginPath();c.moveTo(X+12,Y-53);c.lineTo(X+12,Y-42);c.arc(X+8,Y-42,4,0,Math.PI);c.stroke();
  c.fillStyle='#5a0a0a';c.fillRect(X-2,Y-6,8,3);if(h.ghost>0){c.fillStyle='rgba(0,0,0,'+Math.min(1,h.ghost)+')';for(let i=0;i<6;i++){const a=t*3+i;c.fillRect(X+Math.sin(a)*10-2,Y-60+i*10-((1.5-h.ghost)*30),4,14)}}}
 function drawFurn(c,fu,t){const up=fu.state==='up';
  if(fu.state==='broken'){const X=cc(fu.fx),Y=cc(fu.fy);c.fillStyle='#4a2e1a';for(let i=0;i<6;i++)c.fillRect(X-12+hash2(fu.id,i)*24,Y-4+hash2(i,fu.id)*12,6,2);return}
