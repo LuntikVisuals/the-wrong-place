@@ -7,12 +7,13 @@ SDK=/home/box/tools/android-sdk;BT=$SDK/build-tools/34.0.0;JAR=$SDK/platforms/an
 KP=/workspace/wrongplace-keys/keystore.properties
 prop(){ grep "^$1=" "$KP"|cut -d= -f2-; }
 VER=$(grep -o 'versionName="[^"]*"' AndroidManifest.xml|cut -d'"' -f2)
+VC=$(grep -o 'versionCode="[^"]*"' AndroidManifest.xml|cut -d'"' -f2)
 rm -rf out;mkdir -p out/gen out/classes out/dex out/assets
 python3 ../build.py >/dev/null
 cp ../dist/the-wrong-place.html out/assets/index.html
 python3 tools/make_icon.py res
 "$BT/aapt2" compile --dir res -o out/res.zip
-"$BT/aapt2" link -I "$JAR" --manifest AndroidManifest.xml -A out/assets --min-sdk-version 24 --target-sdk-version 34 --version-code 1 --version-name "$VER" --java out/gen -o out/base.apk out/res.zip --auto-add-overlay
+"$BT/aapt2" link -I "$JAR" --manifest AndroidManifest.xml -A out/assets --min-sdk-version 24 --target-sdk-version 34 --version-code "$VC" --version-name "$VER" --java out/gen -o out/base.apk out/res.zip --auto-add-overlay
 javac -source 8 -target 8 -nowarn -bootclasspath "$JAR" -classpath "$JAR" -d out/classes $(find src out/gen -name '*.java') 2>&1|grep -v "warning\|^Note" || true
 "$BT/d8" --release --min-api 24 --lib "$JAR" --output out/dex $(find out/classes -name '*.class')
 cp out/base.apk out/unsigned.apk;python3 -c "import zipfile;z=zipfile.ZipFile('out/unsigned.apk','a',zipfile.ZIP_DEFLATED);z.write('out/dex/classes.dex','classes.dex');z.close()"
