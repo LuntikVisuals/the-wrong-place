@@ -1,8 +1,8 @@
 /* ===== f_update: simulation step (same code for player and bots) ===== */
 function entSpeed(G,e){
- if(e.side==='k'){let v=e.def.speed;if(e.carry)v*=0.88;if(e.buff.rip>0)v*=1.35;if(e.wipe>0)v*=0.35;if(e.blind>0)v*=0.7;if(e.lunge>0)v*=1.9;return v}
+ if(e.side==='k'){let v=e.def.speed*STAM.k.walkMul*((TUNE[G.M.kind]||{})[e.def.id]||1)*herdMul(G,e)*(G.powered?1.1:1);if(e.sprint)v*=STAM.k.mul;if(e.carry)v*=0.88;if(e.buff.rip>0)v*=1.35;if(e.wipe>0)v*=0.35;if(e.blind>0)v*=0.7;if(e.lunge>0)v*=1.9;return v}
  if(e.st==='down')return 22;
- let v=e.in.run?104:62;if(e.prone)v=32;if(e.burst>0)v*=1.45;if(e.buff.sprint>0)v*=1.6;if(e.slow>0)v*=0.35;if(e.inGap)v=Math.min(v,48);return v;
+ let v=STAM.s.walk*(e.def.small?1.05:1);if(e.sprint)v*=STAM.s.mul*(e.hp<e.maxhp?STAM.s.hurt:1);if(e.prone)v=32;if(e.burst>0)v*=1.45;if(e.buff.sprint>0)v*=1.6;if(e.slow>0)v*=0.35;if(e.tslow>0)v*=ONI.slowMul;if(e.inGap)v=Math.min(v,48);return v;
 }
 function moveEnt(G,e,dx,dy){
  const M=G.M,k=e.side,f=e.f;
@@ -21,6 +21,7 @@ function step(G,dt){
   e.stun=Math.max(0,e.stun-dt);e.blind=Math.max(0,e.blind-dt);e.slow=Math.max(0,e.slow-dt);e.burst=Math.max(0,e.burst-dt);e.wipe=Math.max(0,e.wipe-dt);e.stairCd=Math.max(0,e.stairCd-dt);e.hitT=Math.max(0,e.hitT-dt);e.lunge=Math.max(0,e.lunge-dt);
  }
  for(const g of M.gens)g.boost=Math.max(0,g.boost-dt);
+ for(const L of M.lockers||[])L.openT=Math.max(0,L.openT-dt);updWeather(G,dt);updTracks(G);updChars2(G,dt);
  for(const e of G.ents)if(e.bot&&!(e.side==='s'&&(e.st==='dead'||e.st==='out')))botThink(G,e,dt);
  for(const e of G.ents)updateEnt(G,e,dt);
  separate(G);
@@ -35,14 +36,14 @@ function step(G,dt){
    g.p+=rate*dt;g.noise=1;if(!G.sim&&Math.random()<dt*6){G.fx.push({f:g.f,x:g.x+fr(-10,10),y:g.y-22,vx:fr(-80,80),vy:fr(-120,-20),t:fr(0.2,0.5),col:Math.random()<0.5?'#ffe070':'#fff',sz:2,g:300,spark:true});if(Math.random()<0.3)sfxAt(G,g,'spark',200)}
    if(g.p>=1){g.p=1;g.done=true;G.gensDone++;for(const s of G.surv)if(s.act&&s.act.target===g){s.act=null;s.stats.gens++}
     say(G,'Генератор запущен ('+G.gensDone+'/'+G.needGens+')','#ffe080');if(!G.sim)AU.sfx('gen');
-    if(G.gensDone>=G.needGens&&!G.powered){G.powered=true;G.collapse=150;G.collapseBy='gates';say(G,'Ворота под напряжением! Бегите!','#a0ffa0');if(!G.sim)AU.sfx('gate')}}
+    if(G.gensDone>=G.needGens&&!G.powered){G.powered=true;startLastChance(G);G.collapse=150;G.collapseBy='gates';say(G,'Ворота под напряжением! Бегите!','#a0ffa0');if(!G.sim)AU.sfx('gate')}}
   } else if(g.regress){g.p=Math.max(0,g.p-dt/300);if(g.p<=0)g.regress=false}
  }
  // hooks
  for(const h of M.hooks){if(h.ghost>0)h.ghost-=dt;const v=h.victim;if(!v)continue;v.hookT-=dt;if(v.hookT<=0){h.victim=null;v.st='dead';G.ev.kills++;h.ghost=1.5;say(G,'Хозяин забрал '+v.def.name,'#ff5050')}}
  // collapse / safety timer (guarantees every match ends)
  if(G.collapse<0&&G.t>720){G.collapse=60;G.collapseBy='timer';say(G,'Хозяин теряет терпение…','#ff6060')}
- if(G.collapse>=0){G.collapse-=dt;if(G.collapse<=0){for(const s of G.surv)if(aliveS(s)){if(s.carrier){s.carrier.carry=null;s.carrier=null}for(const h of M.hooks)if(h.victim===s)h.victim=null;s.st='dead';G.ev.kills++;s.collapsed=true}G.collapse=0}}
+ if(G.collapse>=0){G.collapse-=dt;if(G.collapse<=0){for(const s of G.surv)if(aliveS(s)){if(s.locker){s.locker.occ=null;s.locker=null}if(s.carrier){s.carrier.carry=null;s.carrier=null}for(const h of M.hooks)if(h.victim===s)h.victim=null;s.st='dead';G.ev.kills++;s.collapsed=true}G.collapse=0}}
  // escape
  for(const s of G.surv)if(s.st==='ok'&&!s.climb&&s.f===M.gates[0].f){for(const g of M.gates)if(g.open&&g.tiles.some(([x,y])=>tc(s.x)===x&&tc(s.y)===y)){s.st='out';G.ev.escapes++;say(G,s.def.name+' сбежал(а)!','#a0ffa0')}}
  // end
@@ -58,13 +59,15 @@ function updateEnt(G,e,dt){
   if(e.st==='dead'||e.st==='out')return;
   if(e.st==='hooked'){e.walk+=dt;return}
   if(e.st==='down'){e.downT+=dt;if(e.downT>=120){e.st='dead';G.ev.kills++;G.ev.bleedouts=(G.ev.bleedouts||0)+1;say(G,e.def.name+' истёк(ла) кровью','#ff5050');return}}
+  if(e.st==='hidden'){updHidden(G,e,dt);return}
   if(e.st==='carried'){const c=e.carrier;e.x=c.x;e.y=c.y;e.f=c.f;if(!c.climb){e.wig+=dt/((e.isPlayer&&e.in.act)?11:17);if(e.wig>=1)dropCarried(G,c,true)}return}
  }
  if(e.climb){e.climb.t+=dt;if(e.climb.t>=e.climb.dur){const s=e.climb.s.to;e.f=s.f;e.x=cc(s.ax);e.y=cc(s.ay);e.stairCd=0.6;e.climb=null;e.stats.stairs++;G.ev.stairs++;e.stats.floors.add(e.f);if(e.carry)e.carry.f=e.f;if(e.bot)e.bot.path=null}return}
  if(e.side==='k'){
   if(e.vanish>0){e.vanish-=dt;if(e.vanish<=0){const tg=e.vanishTarget;if(tg&&tg.st==='ok'&&tg.f===e.f){placeNear(G,e,tg.x-Math.cos(tg.face)*34,tg.y-Math.sin(tg.face)*34,e.f);e.face=Math.atan2(tg.y-e.y,tg.x-e.x);if(!G.sim&&tg.isPlayer)AU.beat(1)}e.vanishTarget=null;if(e.bot)e.bot.path=null}return}
+  if(e.tp){updTp(G,e,dt);return}
   if(e.pounce){const p=e.pounce,pd=p.d;p.d=Math.min(p.tr.len,p.d+p.speed*dt);const ca=Math.cos(p.tr.ang),sa=Math.sin(p.tr.ang);e.x=p.tr.x0+ca*p.d;e.y=p.tr.y0+sa*p.d;e.face=p.tr.ang;
-   for(const s of G.surv)if(s.f===e.f&&s.st==='ok'&&!s.climb&&dist(e,s)<e.r+s.r+4){damage(G,s,s.hp,e);p.hit=true;break}
+   for(const s of G.surv)if(s.f===e.f&&s.st==='ok'&&!s.climb&&dist(e,s)<e.r+s.r+4){damage(G,s,p.slash?HIT_DMG:s.hp,e);p.hit=true;if(p.slash){fxBurst(G,s,'#78ff90',14);shakeAt(G,s,8)}break}
    if(p.hit||p.d>=p.tr.len){e.pounce=null;e.wipe=p.hit?1.2:0.7;if(!circleFree(M,e.f,e.x,e.y,e.r,'k'))placeNear(G,e,e.x,e.y,e.f)}return}
  } else if(e.pull){const p=e.pull;p.t+=dt;const k=Math.min(1,p.t/p.dur);e.x=lerp(p.sx,p.tx,k);e.y=lerp(p.sy,p.ty,k);if(k>=1){e.pull=null;if(!circleFree(M,e.f,e.x,e.y,e.r,'s'))placeNear(G,e,e.x,e.y,e.f)}return}
  if(e.stun>0){endAct(e);e.moving=false;return}
@@ -94,10 +97,13 @@ function updateEnt(G,e,dt){
  let mx=e.in.mx,my=e.in.my;const ml=Math.hypot(mx,my);if(ml>1){mx/=ml;my/=ml}
  if(e.side==='k'&&e.lunge>0){mx=Math.cos(e.face);my=Math.sin(e.face)}
  const t0=M.floors[e.f].g[idx(tc(e.x),tc(e.y))];e.inGap=t0===TI.GAP;
+ updStamina(e,dt,!!(mx||my));
  const sp=entSpeed(G,e),ox=e.x,oy=e.y;
  if(mx||my){moveEnt(G,e,mx*sp*dt,my*sp*dt);if(!(e.side==='k'&&e.lunge>0)&&!e.aim)e.face=Math.atan2(my,mx)}
  if(e.aim)e.face=e.aim.ang;
- const moved=Math.hypot(e.x-ox,e.y-oy);e.moving=moved>0.05;e.walk+=moved*0.09;
+ const moved=Math.hypot(e.x-ox,e.y-oy);e.moving=moved>0.05;e.walk+=moved*(e.sprint?0.11:0.09);
+ if(e.side==='s'&&e.sprint&&e.moving&&!G.sim)addTrack(G,e,dt);
+ if(e.sprint&&e.moving&&!G.sim){e.dustT=(e.dustT||0)-dt;if(e.dustT<=0){e.dustT=0.07;const bk=Math.atan2(oy-e.y,ox-e.x);for(let i=0;i<2;i++)G.fx.push({f:e.f,x:e.x+Math.cos(bk)*6+fr(-4,4),y:e.y-1+fr(-2,2),vx:Math.cos(bk)*fr(10,40)+fr(-15,15),vy:fr(-28,-6),t:fr(0.3,0.55),col:i?'#8a7a64':'#a8987e',sz:fr(2,4),g:30})}}
  // stairs
  const ti=idx(tc(e.x),tc(e.y));if(M.floors[e.f].g[ti]===TI.STAIR&&e.stairCd<=0){const s=M.stairAt[e.f].get(ti);if(s&&(e.isPlayer||(e.bot&&e.bot.stair===s)))startClimb(G,e,s)}
  // blood trail
@@ -108,12 +114,12 @@ function updateProj(G,dt){
   if(p.back){p.d-=p.speed*dt;if(p.d<=0)G.proj.splice(i,1);continue}
   const pd=p.d;p.d=Math.min(p.tr.len,p.d+p.speed*dt);const ca=Math.cos(p.tr.ang),sa=Math.sin(p.tr.ang);
   const sub={x0:p.tr.x0+ca*pd,y0:p.tr.y0+sa*pd,x1:p.tr.x0+ca*p.d,y1:p.tr.y0+sa*p.d};
-  let hit=o.f===p.f?traceHit(G,{f:p.f},sub,p.w):null;
+  let hit=o.f===p.f&&p.kind!=='whistle'?traceHit(G,{f:p.f},sub,p.w):null;
   if(hit){
    if(p.kind==='rope'){const tx=o.x+Math.cos(p.tr.ang)*(o.r+hit.r+6),ty=o.y+Math.sin(p.tr.ang)*(o.r+hit.r+6);hit.pull={sx:hit.x,sy:hit.y,tx,ty,t:0,dur:0.45};hit.stun=0.7;endAct(hit);G.ev.pulls++;bleed(G,hit,6,false);sfxAt(G,hit,'hit');p.back=true;p.d=Math.hypot(hit.x-p.tr.x0,hit.y-p.tr.y0)}
    else{hit.slow=3;endAct(hit);G.ev.veils++;fxBurst(G,hit,'#e8f0ff',12);G.proj.splice(i,1)}
    continue}
-  if(p.d>=p.tr.len){if(p.kind==='rope')p.back=true;else G.proj.splice(i,1)}
+  if(p.d>=p.tr.len){if(p.kind==='rope')p.back=true;else{if(p.kind==='whistle')landWhistle(G,p);G.proj.splice(i,1)}}
  }
 }
 function updFx(G,dt){for(let i=G.fx.length-1;i>=0;i--){const p=G.fx[i];p.t-=dt;p.x+=p.vx*dt;p.y+=p.vy*dt;p.vy+=(p.g||0)*dt;if(p.t<=0){if(p.blood&&Math.random()<0.4)G.blood.push({f:p.f,x:p.x,y:p.y+12,t:G.t,big:false});G.fx.splice(i,1)}}
@@ -125,3 +131,8 @@ function separate(G){const K=G.killer;if(K.climb||K.vanish>0)return;for(const s 
  if(circleFree(G.M,s.f,s.x+nx*push,s.y+ny*push,s.r,'s')){s.x+=nx*push;s.y+=ny*push}if(circleFree(G.M,K.f,K.x-nx*push,K.y-ny*push,K.r,'k')){K.x-=nx*push;K.y-=ny*push}}}
 // interrupt any action; an interrupted vault lands on its far side so nobody ends up inside the obstacle
 function endAct(e){const a=e.act;if(a&&a.type==='vault'){e.x=a.tx;e.y=a.ty}e.act=null}
+
+function canSprint(e,moving){return !!(e.in.run&&!(e.buff.deaf>0)&&moving&&!e.prone&&!e.inGap&&!e.act&&!e.carry&&!e.climb&&!e.exh&&e.stam>0&&!(e.side==='s'&&e.st!=='ok')&&!(e.side==='k'&&(e.lunge>0||e.stun>0||e.wipe>0)))}
+function updStamina(e,dt,moving){const C=STAM[e.side];if(e.stam==null){e.stam=1;e.stamCd=0;e.exh=false}
+ if(canSprint(e,moving)){e.sprint=true;e.stam-=dt/C.dur;e.stamCd=C.delay;if(e.stam<=0){e.stam=0;e.exh=true;e.stamCd=C.exDelay;e.sprint=false}}
+ else{e.sprint=false;if(e.stamCd>0)e.stamCd-=dt;else e.stam=Math.min(1,e.stam+dt/C.full);if(e.exh&&e.stam>=0.2)e.exh=false}}

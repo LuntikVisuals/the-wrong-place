@@ -2,7 +2,7 @@
 function mkEnt(side,def,f,tx,ty){
  const e={id:0,side,def,f,x:cc(tx),y:cc(ty),r:side==='k'?11:9,face:Math.PI/2,vx:0,vy:0,
   in:{mx:0,my:0,run:true,act:false,atk:false,cast:null,want:null},aim:null,
-  cd:side==='k'?[0,0]:[0],buff:{},st:'ok',hp:0,maxhp:0,hookN:0,hookT:0,downT:0,carry:null,carrier:null,act:null,
+  cd:side==='k'?[0,0,0,0]:[0],buff:{},st:'ok',hp:0,maxhp:0,hookN:0,hookT:0,downT:0,carry:null,carrier:null,act:null,
   stun:0,blind:0,slow:0,slowMul:1,burst:0,climb:null,stairCd:0,lunge:0,wipe:0,prone:false,inGap:false,item:null,itemCharge:0,
   walk:0,moving:false,hitT:0,wig:0,vanish:0,pounce:null,pull:null,isPlayer:false,bot:null,stats:{hits:0,downs:0,hooks:0,gens:0,unhooks:0,abil:0,stuns:0,stairs:0,floors:new Set()},bleedT:0,lastProj:0};
  if(side==='s'){e.hp=e.maxhp=def.hp}
@@ -15,6 +15,7 @@ function newMatch(o){
  const G={M,t:0,ents:[],surv:[],killer:null,proj:[],fx:[],blood:[],msgs:[],shake:0,diff:DIFF[o.diff==null?1:o.diff],diffI:o.diff==null?1:o.diff,
   gensDone:0,needGens:Math.min(4,M.gens.length),powered:false,collapse:-1,collapseBy:'',over:false,result:null,seed:o.seed,sim:!!o.sim,
   ev:{hooks:0,kills:0,escapes:0,downs:0,hits:0,stuns:0,knocks:0,vaults:0,unhooks:0,revives:0,stairs:0,gates:0,abil:0,blinds:0,pulls:0,pounces:0,veils:0,whispers:0,heals:0,wiggleOut:0,crossFloorHits:0,breaks:0}};
+ G.tracks=[];initWeather(G);
  const K=mkEnt('k',KILLERS[o.killer],M.spawnK.f,M.spawnK.x,M.spawnK.y);K.id=0;G.killer=K;G.ents.push(K);
  const spots=shuffle(M.spawnS.slice());
  o.surv.forEach((sid,i)=>{const[f,x,y]=spots[i%spots.length];const s=mkEnt('s',SURVS[sid],f,x,y);s.id=i+1;G.surv.push(s);G.ents.push(s)});
@@ -25,7 +26,7 @@ function newMatch(o){
 function say(G,txt,col){G.msgs.push({txt,t:4,col:col||'#f0e0c0'});if(G.msgs.length>5)G.msgs.shift()}
 function shakeAt(G,e,a){if(G.view&&G.view.f===e.f&&dist(G.view,e)<400)G.shake=Math.max(G.shake,a)}
 function sfxAt(G,e,n,near){if(G.sim)return;const v=G.view;if(!v||v.f!==e.f||dist(v,e)>(near||600))return;AU.sfx(n)}
-function aliveS(s){return s.st==='ok'||s.st==='down'||s.st==='carried'||s.st==='hooked'}
+function aliveS(s){return s.st==='ok'||s.st==='hidden'||s.st==='down'||s.st==='carried'||s.st==='hooked'}
 
 /* ---- shared trajectory: walk a line until wall/solid; used by aim preview AND projectiles/dashes ---- */
 function traceLine(G,e,ang,range,rad){
@@ -44,7 +45,7 @@ function traceHit(G,e,tr,w){
 }
 /* Ability geometry: returns shape object used for drawing the aim AND executing. */
 function abShape(G,e,i,ang){
- const ab=e.side==='k'?e.def.ab[i]:e.def.ab,M=G.M;
+ const ab=e.side==='k'?e.def.ab[i]:e.def.ab,M=G.M;if(!ab)return null;{const s2=abShape2(G,e,ab,ang);if(s2)return s2}
  switch(ab.id){
   case'rope':{const tr=traceLine(G,e,ang,ab.range,0);return{type:'ray',tr,hit:traceHit(G,e,tr,8),ab}}
   case'veil':{const tr=traceLine(G,e,ang,ab.range,0);return{type:'proj',tr,hit:traceHit(G,e,tr,14),ab}}
@@ -59,7 +60,7 @@ function abShape(G,e,i,ang){
   case'lamp':{const K=G.killer;let hit=null;if(K.f===e.f&&K.vanish<=0&&!K.climb){const d=dist(e,K);if(d<ab.range+K.r&&Math.abs(angDiff(ang,Math.atan2(K.y-e.y,K.x-e.x)))<ab.half&&los(M,e.f,e.x,e.y,K.x,K.y))hit=K}return{type:'cone',x:e.x,y:e.y,ang,r:ab.range,half:ab.half,hit,ab}}
  }
 }
-function canCast(G,e,i){if(e.cd[i]>0||e.stun>0||e.climb||(e.act&&!HOLD[e.act.type])||e.vanish>0||e.pounce)return false;if(e.side==='s'&&e.st!=='ok')return false;if(e.side==='k'&&e.carry&&i!==undefined&&e.def.ab[i].id!=='rip'&&e.def.ab[i].id!=='sense')return false;return true}
+function canCast(G,e,i){if(e.side==='k'&&!e.def.ab[i])return false;if(e.side==='k'&&!canCast3(G,e,i))return false;if(e.cd[i]>0||e.stun>0||e.climb||(e.act&&!HOLD[e.act.type])||e.vanish>0||e.pounce||e.tp)return false;if(e.side==='s'&&e.st!=='ok')return false;if(e.side==='k'&&e.carry&&i!==undefined&&e.def.ab[i].id!=='rip'&&e.def.ab[i].id!=='sense')return false;return true}
 function castAbility(G,e,i,ang){
  if(!canCast(G,e,i))return false;
  const sh=abShape(G,e,i,ang),ab=sh.ab;let ok=true;
@@ -74,10 +75,11 @@ function castAbility(G,e,i,ang){
   case'overload':if(!sh.target){ok=false;break}sh.target.boost=10;fxBurst(G,sh.target,'#ffe060',14);break;
   case'sprint':e.buff.sprint=2;e.face=ang;break;
   case'hide':e.buff.hide=6;break;
+  case'bell':case'sheep':case'pray':case'whistle':case'totem':case'slash':case'souls':case'tp':ok=cast2(G,e,sh);break;
   case'lamp':e.buff.lamp=0.35;e.lampAng=ang;if(sh.hit){blindKiller(G,sh.hit,e)}break;
  }
  if(!ok)return false;
- e.cd[i]=ab.cd;e.stats.abil++;G.ev.abil++;sfxAt(G,e,'ab');e.face=(ab.id==='hide'||ab.id==='rip'||ab.id==='sense'||ab.id==='shot'||ab.id==='overload'||ab.id==='whisper')?e.face:ang;return true;
+ e.cd[i]=ab.cd;e.stats.abil++;G.ev.abil++;sfxAt(G,e,'ab');e.face=(ab.id==='bell'||ab.id==='pray'||ab.id==='hide'||ab.id==='rip'||ab.id==='sense'||ab.id==='shot'||ab.id==='overload'||ab.id==='whisper')?e.face:ang;return true;
 }
 function blindKiller(G,K,by){K.blind=2;G.ev.blinds++;if(K.carry)dropCarried(G,K,true);if(K.isPlayer)G.flash=1;}
 function fxBurst(G,o,col,n){if(G.sim)return;for(let i=0;i<n;i++)G.fx.push({f:o.f,x:o.x,y:o.y-10,vx:fr(-60,60),vy:fr(-90,10),t:fr(0.4,0.9),col,sz:fr(2,4),g:160})}
@@ -117,7 +119,7 @@ function breakFurn(G,fu){const F=G.M.floors[fu.f];fu.state='broken';F.blk[idx(fu
 
 /* ---- interactions: list the best available interaction for an entity ---- */
 function interactOptions(G,e){
- const M=G.M,o=[];if(e.climb||e.stun>0||e.vanish>0||e.pounce)return o;
+ const M=G.M,o=[];if(e.climb||e.stun>0||e.vanish>0||e.pounce||e.tp)return o;
  if(e.side==='s'){
   if(e.st!=='ok')return o;
   for(const it of M.items)if(!it.taken&&it.f===e.f&&dist(e,it)<30)o.push({type:'pick',target:it,label:it.kind==='medkit'?'Взять аптечку':'Взять ящик инструментов'});
@@ -128,11 +130,13 @@ function interactOptions(G,e){
   for(const g of M.gens)if(!g.done&&g.f===e.f&&dist(e,g)<46)o.push({type:'repair',target:g,label:'Чинить генератор'});
   for(const fu of M.furn)if(fu.state==='up'&&fu.f===e.f&&dist(e,fu)<44)o.push({type:'knock',target:fu,label:fu.kind==='ward'?'Опрокинуть шкаф':'Опрокинуть тумбу',dur:0.3});
   for(const fu of M.furn)if(fu.state==='down'&&fu.f===e.f&&Math.hypot(e.x-cc(fu.fx),e.y-cc(fu.fy))<T/2+e.r+8&&vaultTarget(G,e,fu))o.push({type:'vault',target:fu,label:'Перелезть',dur:0.55});
+  for(const L of M.lockers||[])if(!L.occ&&L.f===e.f&&dist(e,L)<44)o.push({type:'hide',target:L,label:'Спрятаться в шкаф',dur:0.5});
   if(e.item==='medkit'&&e.hp<e.maxhp)o.push({type:'medkit',target:e,label:'Аптечка'});
  } else {
   if(e.carry){for(const h of M.hooks)if(!h.victim&&h.f===e.f&&dist(e,h)<50)o.push({type:'hook',target:h,label:'Повесить на крюк',dur:1});return o}
   for(const s of G.surv)if(s.st==='down'&&s.f===e.f&&dist(e,s)<42)o.push({type:'pickup',target:s,label:'Поднять на плечо',dur:0.9});
   for(const fu of M.furn)if(fu.state==='down'&&fu.f===e.f&&Math.hypot(e.x-cc(fu.fx),e.y-cc(fu.fy))<T/2+e.r+10)o.push({type:'break',target:fu,label:'Сломать',dur:e.buff.rip>0?0.15:2.2});
+  for(const L of M.lockers||[])if(L.f===e.f&&dist(e,L)<44&&L.openT<=0)o.push({type:'search',target:L,label:'Открыть шкаф',dur:0.8});
   for(const g of M.gens)if(!g.done&&g.p>0.05&&!g.regress&&g.f===e.f&&dist(e,g)<48)o.push({type:'kick',target:g,label:'Пнуть генератор',dur:1.4});
  }
  if(e.in.want){return o.filter(x=>x.type===e.in.want&&(!e.in.wantT||x.target===e.in.wantT))}
@@ -148,6 +152,8 @@ function finishAction(G,e,a){
   case'gate':if(!tg.open){tg.open=true;for(const[x,y]of tg.tiles)M.floors[tg.f].g[idx(x,y)]=TI.GRASS;G.ev.gates++;say(G,'Ворота открыты: '+tg.name,'#a0ffa0');sfxAt(G,e,'gate',2000)}break;
   case'knock':if(tg.state==='up')knockOver(G,e,tg);break;
   case'vault':break;
+  case'hide':if(!tg.occ&&e.st==='ok')enterLocker(G,e,tg);break;
+  case'search':if(!e.carry)searchLocker(G,e,tg);break;
   case'pickup':if(tg.st==='down'){tg.st='carried';tg.carrier=e;e.carry=tg;tg.wig=0;tg.f=e.f}break;
   case'hook':if(e.carry&&!tg.victim){const v=e.carry;e.carry=null;v.carrier=null;v.hookN++;e.stats.hooks++;G.ev.hooks++;sfxAt(G,e,'hook',900);shakeAt(G,e,5);bleed(G,tg,10,true);
     if(v.hookN>=3){v.st='dead';v.f=tg.f;v.x=tg.x;v.y=tg.y;G.ev.kills++;say(G,'Хозяин забрал '+v.def.name,'#ff5050');tg.ghost=1.5}

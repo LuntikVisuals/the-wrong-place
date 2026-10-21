@@ -31,7 +31,7 @@ function follow(G,e,b){
 }
 function unstick(G,e,b,dt){
  if(b.jig>0){b.jig-=dt;e.in.mx=b.jx;e.in.my=b.jy;return true}
- const busy=e.act||e.climb||e.stun>0||e.vanish>0||e.pounce||e.pull||(e.side==='s'&&e.st!=='ok'&&e.st!=='down');
+ const busy=e.act||e.climb||e.stun>0||e.vanish>0||e.pounce||e.tp||e.pull||(e.side==='s'&&e.st!=='ok'&&e.st!=='down');
  if(!b.moveIntent||busy){b.stuckT=0;b.lx=e.x;b.ly=e.y;return false}
  if(Math.hypot(e.x-b.lx,e.y-b.ly)>3){b.stuckT=0;b.lx=e.x;b.ly=e.y;return false}
  b.stuckT+=dt;if(b.stuckT>1.2){b.stuckT=0;b.path=null;b.jig=0.35;const a=rnd()*6.283;b.jx=Math.cos(a);b.jy=Math.sin(a);G.ev.unstick=(G.ev.unstick||0)+1;return true}
@@ -43,19 +43,19 @@ function botThink(G,e,dt){const b=e.bot;b.repath-=dt;b.think-=dt;
 }
 /* ---------- killer ---------- */
 function kSees(G,K,s){if(s.f!==K.f||K.blind>0||K.vanish>0||K.climb||s.climb)return false;if(!(s.st==='ok'||s.st==='down'))return false;
- const r=SIGHT*G.diff.kSight*(s.prone?0.45:1)*(s.inGap?0.7:1)*(M_outdoorDark(G,K)?0.85:1);const d=dist(K,s);if(d>r)return false;return los(G.M,K.f,K.x,K.y,s.x,s.y)}
+ const r=visMul(G)*SIGHT*G.diff.kSight*(s.prone?0.45:1)*(s.inGap?0.7:1)*(M_outdoorDark(G,K)?0.85:1);const d=dist(K,s);if(d>r)return false;return los(G.M,K.f,K.x,K.y,s.x,s.y)}
 function M_outdoorDark(G,K){return G.M.floors[K.f].outdoor}
 function noteInfo(G,K,s){if(s.f!==K.f&&!(K.buff.sense>0))WP.dbg.crossFloor++}
 function killerBot(G,K,b,dt){
- const M=G.M,D=G.diff;K.in.atk=false;
- if(K.stun>0||K.climb||K.vanish>0||K.pounce)return;
+ const M=G.M,D=G.diff;K.in.atk=false;K.in.run=false;
+ if(K.stun>0||K.climb||K.vanish>0||K.pounce||K.tp)return;
  // --- senses ---
  if(b.think<=0){b.think=0.12;
-  let vis=null,vd=1e9;for(const s of G.surv)if(kSees(G,K,s)&&!(b.giveUp&&b.giveUp[s.id]>G.t&&s.st==='ok')){noteInfo(G,K,s);const d=dist(K,s)+(s.st==='down'?-60:0);if(d<vd){vd=d;vis=s}}
+  let vis=null,vd=1e9;for(const s of G.surv)if(kSees(G,K,s)&&!(b.giveUp&&b.giveUp[s.id]>G.t&&s.st==='ok')){noteInfo(G,K,s);const d=dist(K,s)+(s.st==='down'?(b.slug&&b.slug.s===s&&G.t<b.slug.until?400:-60):0);if(d<vd){vd=d;vis=s}}
   if(vis){if(!b.lastSeen||b.lastSeen.s!==vis)b.react=D.kReact;b.lastSeen={s:vis,x:vis.x,y:vis.y,f:vis.f,t:G.t,vx:vis.x-(b.lastSeen&&b.lastSeen.s===vis?b.lastSeen.x:vis.x),vy:vis.y-(b.lastSeen&&b.lastSeen.s===vis?b.lastSeen.y:vis.y)};b.noInfo=0}
   b.vis=vis;
   if(!vis){b.noInfo+=0.12;
-   let heard=null;for(const s of G.surv)if(s.f===K.f&&s.st==='ok'&&!(s.buff.hide>0)&&dist(K,s)<TERROR){noteInfo(G,K,s);heard=s}
+   let heard=null;for(const s of G.surv)if(s.f===K.f&&(s.st==='ok'||s.st==='hidden')&&!(s.buff.hide>0)&&dist(K,s)<TERROR){noteInfo(G,K,s);heard=s}
    for(const s of G.surv)if(s.f===K.f&&s.lastHit&&G.t-s.lastHit<1&&dist(K,s)<600)heard=s;
    if(heard&&(!b.sus||G.t-b.sus.t>2.5)){const er=70*(1-D.kSight*0.5);b.sus={f:heard.f,x:heard.x+rr(-er,er),y:heard.y+rr(-er,er),t:G.t,why:'heart'};b.noInfo=0}
    if(K.buff.sense>0){let best=null,bd=1e9;for(const s of G.surv)if(s.st==='ok'||s.st==='down'){const d=dist(K,s)+(s.f!==K.f?500:0);if(d<bd){bd=d;best=s}}if(best)b.sus={f:best.f,x:best.x,y:best.y,t:G.t,why:'sense'}}
@@ -64,6 +64,7 @@ function killerBot(G,K,b,dt){
   }
  }
  if(b.react>0)b.react-=dt;
+ (b.fv=b.fv||M.floors.map(()=>-1))[K.f]=G.t;
  const vis=b.vis;
  // --- carrying: go hook ---
  if(K.carry){b.state='carry';
@@ -73,28 +74,32 @@ function killerBot(G,K,b,dt){
   if(K.def.id==='stitches'&&K.cd[1]<=0&&b.path&&b.path.length-b.pi>25&&rnd()<0.02)K.in.cast={i:1,ang:K.face};
   return}
  // --- downed survivor known: pick up ---
- const downed=G.surv.filter(s=>s.st==='down'&&s.f===K.f&&(kSees(G,K,s)||dist(K,s)<60));
+ // slugging: right after a down, if another healthy survivor is in sight the killer may leave the downed one and keep chasing
+ for(const s of G.surv)if(s.st==='down'&&s.downT<0.5&&s.f===K.f&&!(b.slug&&b.slug.s===s)){b.slug={s,until:0};
+  const other=G.surv.find(o=>o.st==='ok'&&o.f===K.f&&(kSees(G,K,o)?dist(K,o)<480:dist(K,o)<TERROR*1.2));if(other&&rnd()<D.kSlug){b.slug.until=G.t+10+rnd()*8;b.slug.o=other;b.sus={f:other.f,x:other.x,y:other.y,t:G.t,why:'slug'};if(kSees(G,K,other)){b.vis=other;b.lastSeen={s:other,x:other.x,y:other.y,f:other.f,t:G.t,vx:0,vy:0}}}}
+ const slugged=s=>b.slug&&b.slug.s===s&&G.t<b.slug.until&&b.slug.o&&b.slug.o.st==='ok';
+ const downed=G.surv.filter(s=>s.st==='down'&&s.f===K.f&&(kSees(G,K,s)||dist(K,s)<60)&&!slugged(s));
  if(downed.length){const s=downed.sort((a,c)=>dist(K,a)-dist(K,c))[0];b.state='pickup';
   if(dist(K,s)<40){K.in.want='pickup';K.in.wantT=s;K.in.act=true;K.in.mx=K.in.my=0;return}
   planNode(G,K,b,'dn'+s.id+tc(s.x)+','+tc(s.y),s.f,tc(s.x),tc(s.y));follow(G,K,b);return}
- K.in.act=false;K.in.want=null;
+ K.in.act=false;K.in.want=null;if(botSearch(G,K,b))return;
  // --- chase ---
- if(vis&&vis.st==='ok'){b.state='chase';b.chaseT+=dt;b.sus=null;const d=dist(K,vis);const a=Math.atan2(vis.y-K.y,vis.x-K.x);
+ if(vis&&vis.st==='ok'){b.state='chase';b.chaseT+=dt;b.sus=null;const d=dist(K,vis);K.in.run=d>46&&d<(D.kRun||300);const a=Math.atan2(vis.y-K.y,vis.x-K.x);
   if(d<200&&thickClear(M,K.f,K.x,K.y,vis.x,vis.y,K.r,'k')){steer(K,vis.x,vis.y);b.moveIntent=true}else{const gx=tc(vis.x),gy=tc(vis.y);planTo(G,K,b,'ch'+gx+','+gy,(f,x,y)=>f===vis.f&&Math.abs(x-gx)<=1&&Math.abs(y-gy)<=1);
    if(!b.path.length){b.giveUp=b.giveUp||{};b.giveUp[vis.id]=G.t+4;b.vis=null}else follow(G,K,b)}
   if(b.react<=0){
    const aim=a+rr(-D.kAim,D.kAim);
    if(d<44){K.face=aim;K.in.atk=true}
    else if(rnd()<D.kAb*0.25){
-    const id0=K.def.ab[0].id,id1=K.def.ab[1].id;
-    for(let i=0;i<2;i++){if(K.cd[i]>0)continue;const id=K.def.ab[i].id;
+    if(kBotAb2(G,K,b,vis,d,aim)){}else
+    for(let i=0;i<K.def.ab.length;i++){if(K.cd[i]>0)continue;const id=K.def.ab[i].id;
      if((id==='rope'||id==='veil'||id==='pounce')&&d>70&&d<K.def.ab[i].range-10){const sh=abShape(G,K,i,aim);if(sh.hit===vis){K.in.cast={i,ang:aim};break}}
      if(id==='rip'&&(b.chaseT>6||d>140)){K.in.cast={i,ang:a};break}
      if(id==='whisper'&&d>180&&b.chaseT>4){K.in.cast={i,ang:a};break}
     }}
   }
   return}
- b.chaseT=0;
+ b.chaseT=0;kBotIdle2(G,K,b);
  if(K.def.id==='rotjaw'&&K.cd[0]<=0&&b.noInfo>10&&rnd()<D.kAb*0.05)K.in.cast={i:0,ang:K.face};
  if(K.def.id==='bride'&&K.cd[0]<=0&&b.sus&&b.sus.why==='heart'&&rnd()<D.kAb*0.05)K.in.cast={i:0,ang:K.face};
  // --- go to last seen / suspicion ---
@@ -108,24 +113,26 @@ function killerBot(G,K,b,dt){
  b.state='patrol';
  const kick=interactOptions(G,K).find(o=>o.type==='kick');if(kick&&kick.target.p>0.2&&rnd()<0.5*D.kAb+0.2){K.in.want='kick';K.in.wantT=kick.target;K.in.act=true;K.in.mx=K.in.my=0;b.patrol=null;return}
  if(!b.patrol||G.t-b.patrol.t>45){const gs=M.gens.filter(g=>!g.done);let tg=null;
-  if(gs.length&&rnd()<0.7){let tot=0;for(const g of gs)tot+=0.3+g.p+(g.f===K.f?0.4:0);let r=rnd()*tot;for(const g of gs){r-=0.3+g.p+(g.f===K.f?0.4:0);if(r<=0){tg=g;break}}tg=tg||gs[0];b.patrol={o:tg,t:G.t}}
-  else{let f=ri(0,M.floors.length-1),x,y,n=0;do{x=ri(1,FW-2);y=ri(1,FH-2)}while(solidAt(M,f,x,y,'k')&&n++<50);b.patrol={o:{f,tx:x,ty:y,pt:true},t:G.t}}}
+  b.fv=b.fv||M.floors.map(()=>-1);let stale=-1;for(let i=0;i<M.floors.length;i++)if(G.t-Math.max(0,b.fv[i])>75&&(stale<0||b.fv[i]<b.fv[stale]))stale=i;
+  if(stale<0&&gs.length&&rnd()<0.7){let tot=0;b.fv=b.fv||M.floors.map(()=>-1);const gw=g=>0.3+g.p+(g.f===K.f?0.4:0)+Math.min(1.5,(G.t-b.fv[g.f])/60);for(const g of gs)tot+=gw(g);let r=rnd()*tot;for(const g of gs){r-=gw(g);if(r<=0){tg=g;break}}tg=tg||gs[0];b.patrol={o:tg,t:G.t}}
+  else{b.fv=b.fv||M.floors.map(()=>-1);let f=stale;if(f<0){f=0;for(let i=1;i<M.floors.length;i++)if(b.fv[i]<b.fv[f])f=i}let x,y,n=0;do{x=ri(1,FW-2);y=ri(1,FH-2)}while(solidAt(M,f,x,y,'k')&&n++<50);b.patrol={o:{f,tx:x,ty:y,pt:true},t:G.t}}}
  const o=b.patrol.o;let arrived;
  if(o.pt){planNode(G,K,b,'pt'+o.f+','+o.tx+','+o.ty,o.f,o.tx,o.ty);arrived=follow(G,K,b)}else{planAdj(G,K,b,'pg'+o.id,o);arrived=follow(G,K,b)}
  if(arrived||!b.path||!b.path.length)b.patrol=null;
 }
 /* ---------- survivor ---------- */
-function sSeesK(G,s,K){if(K.f!==s.f||K.vanish>0||K.climb||s.climb)return false;const d=dist(s,K);if(d>SIGHT*1.1)return false;return los(G.M,s.f,s.x,s.y,K.x,K.y)}
+function sSeesK(G,s,K){if(K.f!==s.f||K.vanish>0||K.climb||s.climb)return false;const d=dist(s,K);if(d>SIGHT*1.1*visMul(G))return false;return los(G.M,s.f,s.x,s.y,K.x,K.y)}
 function survBot(G,s,b,dt){
  const M=G.M,K=G.killer,D=G.diff;s.in.cast=null;
  if(s.st==='carried'||s.st==='hooked'){s.in.mx=s.in.my=0;s.in.act=false;return}
+ if(s.st==='hidden'){botHide(G,s,b,false,false,K.f===s.f?dist(s,K):1e9);return}
  if(s.climb||s.stun>0||s.pull)return;
  if(s.act&&s.act.type==='vault')return;
  const seen=sSeesK(G,s,K);if(seen){b.lastK={x:K.x,y:K.y,f:K.f,t:G.t}}
  const kd=K.f===s.f?dist(s,K):1e9,heart=kd<TERROR&&K.vanish<=0;
- if(s.st==='down'){b.state='crawl';let tg=null,bd=1e9;for(const o of G.surv)if(o!==s&&o.st==='ok'&&o.f===s.f){const d=dist(s,o);if(d<bd){bd=d;tg=o}}
+ if(s.st==='down'){b.state='crawl';if(G.surv.some(o=>o.act&&o.act.type==='revive'&&o.act.target===s||o.bot&&o.bot.state==='revive'&&o.f===s.f&&dist(o,s)<80)){s.in.mx=s.in.my=0;b.moveIntent=false;s.in.act=false;return}let tg=null,bd=1e9;for(const o of G.surv)if(o!==s&&o.st==='ok'&&o.f===s.f){const d=dist(s,o);if(d<bd){bd=d;tg=o}}
   if(tg&&bd>30){planNode(G,s,b,'cr'+tc(tg.x)+','+tc(tg.y),tg.f,tc(tg.x),tc(tg.y));follow(G,s,b)}else{s.in.mx=s.in.my=0;b.moveIntent=false}s.in.act=false;return}
- s.in.run=true;
+ s.in.run=false;
  const recentK=b.lastK&&b.lastK.f===s.f&&G.t-b.lastK.t<2.5;
  const danger=(b.fleeUntil>G.t&&K.f===s.f)||(seen&&kd<D.sFlee&&!(K.carry&&kd>130))||(heart&&kd<95)||(s.lastHit&&G.t-s.lastHit<3&&K.f===s.f)||(recentK&&b.state==='flee'&&kd<D.sFlee+40);
  // abilities
@@ -136,10 +143,12 @@ function survBot(G,s,b,dt){
   else if(ab==='hide'&&heart)s.in.cast={i:0,ang:s.face};
   else if(ab==='shot'){const sh=abShape(G,s,0,0);if(sh.target&&sh.target.hp<sh.target.maxhp*0.65)s.in.cast={i:0,ang:0}}
   else if(ab==='overload'&&s.act&&s.act.type==='repair'&&s.act.target.p<0.7)s.in.cast={i:0,ang:0};
+  else sBotAb2(G,s,ab,danger,seen,kd);
  }
  // lamp a killer who carries a friend
  if(ab==='lamp'&&s.cd[0]<=0&&seen&&K.carry&&kd<160){const a=Math.atan2(K.y-s.y,K.x-s.x);if(abShape(G,s,0,a).hit)s.in.cast={i:0,ang:a}}
- if(danger){if(!(b.fleeUntil>G.t))b.fleeUntil=G.t+2.5+rnd()*2;b.state='flee';if(s.act&&HOLD[s.act.type])s.act=null;if(s.act)return;s.prone=false;
+ if(botHide(G,s,b,danger,seen,kd))return;
+ if(danger){s.in.run=true;if(!(b.fleeUntil>G.t))b.fleeUntil=G.t+2.5+rnd()*2;b.state='flee';if(s.act&&HOLD[s.act.type])s.act=null;if(s.act)return;s.prone=false;
   // knock furniture onto the killer
   for(const fu of M.furn)if(fu.state==='up'&&fu.f===s.f&&dist(s,fu)<44&&kd<150){const fz={x:cc(fu.fx),y:cc(fu.fy)};const kz=dist(K,fz),vert=fuVert(G,fu),sideS=vert?Math.sign(s.x-fz.x):Math.sign(s.y-fz.y),sideK=vert?Math.sign(K.x-fz.x):Math.sign(K.y-fz.y);
     const inZone=Math.abs(s.x-fz.x)<T/2+s.r&&Math.abs(s.y-fz.y)<T/2+s.r;
